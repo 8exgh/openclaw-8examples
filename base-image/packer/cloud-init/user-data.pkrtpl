@@ -1,0 +1,14 @@
+#cloud-config
+hostname: openclaw-base
+ssh_pwauth: true
+users:
+  - name: ${username}
+    shell: /bin/bash
+    groups: [adm, sudo]
+    lock_passwd: false
+chpasswd:
+  expire: false
+  users:
+    - name: ${username}
+      password: ${password}
+      type: text

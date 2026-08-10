@@ -1,0 +1,18 @@
+services:
+  openclaw:
+    image: "{{IMAGE}}"
+    container_name: "openclaw-{{TENANT_ID}}"
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    ports:
+      # Gateway is only reachable from the host; front it with your reverse proxy.
+      - "127.0.0.1:{{PORT}}:18789"
+    volumes:
+      - ./config:/home/node/.openclaw
+      - ./workspace:/home/node/.openclaw/workspace
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN

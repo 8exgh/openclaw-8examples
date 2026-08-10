@@ -1,0 +1,21 @@
+{
+  "name": "managed-openclaw",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Control plane for a fleet of managed OpenClaw assistants — one per customer, with per-tenant capabilities, nudging, and fleet-wide updates.",
+  "scripts": {
+    "cli": "tsx src/cli.ts",
+    "serve": "tsx src/cli.ts serve",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fastify": "^5.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
