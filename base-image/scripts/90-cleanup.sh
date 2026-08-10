@@ -50,6 +50,11 @@ EOF
 systemctl enable regenerate-ssh-host-keys.service
 rm -f /etc/ssh/ssh_host_*
 
+# Guarantee: nothing in the agent user's home is root-owned, no matter what
+# earlier provisioning steps did. Root's own tool state doesn't ship either.
+rm -rf /root/.openclaw /root/.claude /root/.npm /root/.cache
+chown -R "${OPENCLAW_USER}:${OPENCLAW_USER}" "/home/${OPENCLAW_USER}"
+
 rm -f /root/.bash_history "/home/${OPENCLAW_USER}/.bash_history" || true
 truncate -s 0 /var/log/wtmp /var/log/btmp /var/log/lastlog || true
 

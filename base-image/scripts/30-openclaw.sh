@@ -10,7 +10,12 @@ apt-get -y install nodejs
 # OpenClaw reuses a local Claude login when one exists).
 npm install -g openclaw@latest @anthropic-ai/claude-code@latest
 
-node --version && openclaw --version && claude --version
+# Provisioning runs as root with HOME preserved (sudo -E) — pin HOME to /root
+# so these first-run version checks can't seed root-owned state into the
+# agent user's home (openclaw/claude create ~/.openclaw, ~/.claude on first run).
+HOME=/root node --version
+HOME=/root openclaw --version
+HOME=/root claude --version
 
 # Gateway service: enabled, but only starts once a config exists
 # (tenant provisioning or manual `openclaw onboard` creates it).
