@@ -118,7 +118,10 @@ export function buildOpenclawConfig(
         workspace: '/home/node/.openclaw/workspace',
         model: { primary: 'anthropic/claude-sonnet-4-6' },
         heartbeat: { every: '30m', target: 'last' },
-        sandbox: { mode: 'non-main', scope: 'agent' },
+        // Container tier: the container IS the isolation boundary, and there's
+        // no Docker inside it — non-main/all would need Docker-in-Docker and
+        // fail every agent turn. Desktop VMs do have Docker, so sandbox there.
+        sandbox: { mode: tenant.tier === 'desktop' ? 'non-main' : 'off', scope: 'agent' },
       },
     },
     channels: channelConfig(tenant, { channelReady: opts.channelReady ?? false }),

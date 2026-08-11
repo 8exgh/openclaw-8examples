@@ -169,9 +169,9 @@ You can place outbound calls on this person's behalf.
     env: [
       { key: 'DEPLOY_TOKEN', description: 'Token for the hosting provider used to publish tenant sites (e.g. Vercel/Netlify/Cloudflare)' },
     ],
-    configPatch: () => ({
-      agents: { defaults: { sandbox: { mode: 'all', scope: 'agent' } } },
-    }),
+    // Sandbox mode is a tier concern (set in render.ts), not a capability one —
+    // forcing 'all' here needs Docker-in-Docker and breaks the container tier.
+    configPatch: () => ({}),
     workspaceDoc: `# Capability: Website building
 
 You can build and publish simple websites for this person.
