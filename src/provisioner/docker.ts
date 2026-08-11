@@ -16,7 +16,14 @@ export function dockerAvailable(): boolean {
 }
 
 export function composeUp(tenant: Tenant): void {
-  docker(['compose', 'up', '-d', '--remove-orphans'], tenantDir(tenant.id));
+  const dir = tenantDir(tenant.id);
+  docker(['compose', 'up', '-d', '--remove-orphans'], dir);
+  // A config-only change (openclaw.json is bind-mounted, so the compose file is
+  // unchanged) makes `up -d` a no-op and the gateway hot-reloads in place — but
+  // hot-reloading the Telegram channel leaks the old long-poll loop, so two
+  // pollers fight over getUpdates and inbound messages silently vanish. A full
+  // restart guarantees exactly one poller.
+  docker(['compose', 'restart'], dir);
 }
 
 export function composeDown(tenant: Tenant): void {
