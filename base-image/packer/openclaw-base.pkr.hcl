@@ -101,6 +101,8 @@ build {
       "${abspath(path.root)}/../scripts/50-devtools.sh",
       "${abspath(path.root)}/../scripts/55-productivity.sh",
       "${abspath(path.root)}/../scripts/60-sunshine.sh",
+      "${abspath(path.root)}/../scripts/65-tailscale.sh",
+      "${abspath(path.root)}/../scripts/70-hardening.sh",
       "${abspath(path.root)}/../scripts/90-cleanup.sh",
     ]
   }
