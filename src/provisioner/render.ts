@@ -83,8 +83,10 @@ function channelConfig(tenant: Tenant, opts: { channelReady: boolean }): Record<
           // token crash-loops the gateway. The web chat works regardless.
           enabled: opts.channelReady,
           botToken: '${TELEGRAM_BOT_TOKEN}',
-          // Telegram allowlists use tg ids; pairing lets the customer approve themselves on first message.
-          dmPolicy: 'pairing',
+          // 'open' = respond to any DM (no pairing approval). Convenient for the
+          // operator's own bots; for real customers switch back to 'pairing' or
+          // 'allowlist' so a discoverable bot can't burn the account's tokens.
+          dmPolicy: 'open',
         },
       };
     case 'signal':
