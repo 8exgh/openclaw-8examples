@@ -84,14 +84,15 @@ async function main() {
     scriptEnabled: false,
     impersonateUser: false,
   };
+  // No integrations.update endpoint in RC 6.x, so remove + recreate to refresh
+  // the channel list.
   const list = await api('/api/v1/integrations.list?count=0');
   const existing = list.j?.integrations?.find((x) => x.name === 'openclaw-bridge' && x.type === 'webhook-outgoing');
   if (existing) {
-    await idempotent('update webhook (all channels)', () =>
-      api('/api/v1/integrations.update', { method: 'POST', body: { integrationId: existing._id, ...body } }));
-  } else {
-    await idempotent('create webhook', () => api('/api/v1/integrations.create', { method: 'POST', body }));
+    await idempotent('remove old webhook', () =>
+      api('/api/v1/integrations.remove', { method: 'POST', body: { integrationId: existing._id, type: 'webhook-outgoing' } }));
   }
+  await idempotent('create webhook (all channels)', () => api('/api/v1/integrations.create', { method: 'POST', body }));
 
   console.log(`\nDone. ${COUNT} users/channels + bot + webhook -> ${HOOK_URL}`);
   console.log('Users: openclaw1..openclaw' + COUNT + ' (password = username). Bot: ' + BOT_USER);
