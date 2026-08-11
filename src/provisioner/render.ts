@@ -121,7 +121,7 @@ export function buildOpenclawConfig(
     agents: {
       defaults: {
         workspace: '/home/node/.openclaw/workspace',
-        model: { primary: 'anthropic/claude-sonnet-4-6' },
+        model: { primary: 'anthropic/claude-opus-4-8' },
         heartbeat: { every: '30m', target: 'last' },
         // Container tier: the container IS the isolation boundary, and there's
         // no Docker inside it — non-main/all would need Docker-in-Docker and
