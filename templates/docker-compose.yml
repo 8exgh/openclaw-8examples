@@ -15,6 +15,13 @@ services:
       - DISPLAY=:99
       - OPENCLAW_BROWSER_HEADLESS=false
       - OPENCLAW_BROWSER_NO_SANDBOX=true
+      # Expose the browser tool to the agent (otherwise it only has web_fetch).
+      - OPENCLAW_BROWSER_ENABLED=true
+      # Chrome's own sandbox needs unprivileged userns, which cap_drop:ALL +
+      # no-new-privileges block — so launch via a wrapper that always adds
+      # --no-sandbox. The container is the isolation boundary. (The NO_SANDBOX
+      # env above isn't honored by the CDP profile launch; the wrapper is.)
+      - OPENCLAW_BROWSER_EXECUTABLE_PATH=/opt/ms-playwright/chrome-nosandbox.sh
       # Chromium comes from one shared read-only copy (see volumes) instead of a
       # ~1GB per-tenant install — this is what makes dozens of tenants fit on
       # one host's disk. Falls back to ./browser-cache if the shared dir is absent.
