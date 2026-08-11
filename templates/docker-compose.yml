@@ -1,3 +1,5 @@
+name: "openclaw-{{TENANT_ID}}"
+
 services:
   openclaw:
     image: "{{IMAGE}}"
@@ -11,8 +13,18 @@ services:
     volumes:
       - ./config:/home/node/.openclaw
       - ./workspace:/home/node/.openclaw/workspace
+      # Local encryption key for OAuth auth-profile tokens. Must live OUTSIDE
+      # the .openclaw mount — do not nest this under ./config. Losing it
+      # invalidates every stored OAuth credential for this tenant.
+      - ./auth-profile-secrets:/home/node/.config/openclaw
+      # Playwright/Chromium downloads and profile cache.
+      - ./browser-cache:/home/node/.cache
     security_opt:
       - no-new-privileges:true
     cap_drop:
-      - NET_RAW
-      - NET_ADMIN
+      - ALL
+    mem_limit: "{{MEM_LIMIT}}"
+    memswap_limit: "{{MEM_LIMIT}}" # no swap escape hatch — fail fast, don't thrash the host
+    cpus: "{{CPUS}}"
+    pids_limit: {{PIDS_LIMIT}}
+    shm_size: 1g # Chrome dies on Docker's 64m default

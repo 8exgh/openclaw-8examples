@@ -1,3 +1,5 @@
+import type { Resources } from './provisioner/resources.js';
+
 export type CapabilityId =
   | 'email'
   | 'calendar'
@@ -30,6 +32,8 @@ export interface AppliedRelease {
   appliedAt: string;
 }
 
+export type Tier = 'container' | 'desktop';
+
 export interface Tenant {
   id: string;
   name: string;
@@ -38,17 +42,27 @@ export interface Tenant {
   channel: ChannelId;
   /** Host port the tenant's gateway is published on (container always 18789). */
   gatewayPort: number;
+  /** Runtime substrate; absent means 'container'. */
+  tier?: Tier;
+  /** Operator override; omitted means derived from enabled capabilities. */
+  resources?: Partial<Resources>;
   createdAt: string;
   capabilities: Partial<Record<CapabilityId, CapabilityState>>;
   nudgeLog: NudgeRecord[];
   applied?: AppliedRelease;
+  /** Set when the tenant is offboarded; excluded from rollouts and nudging. */
+  offboardedAt?: string;
 }
 
 export interface Fleet {
   releaseChannel: 'latest' | 'stable';
-  /** Image every tenant should run, e.g. ghcr.io/openclaw/openclaw:latest */
+  /** Image every tenant should run, e.g. ghcr.io/openclaw/openclaw:latest-browser */
   image: string;
   /** Digest-pinned ref resolved at the last `update`, so the whole fleet runs the same build. */
   pinnedImageRef?: string;
+  /** What the fleet ran before the last update — the one-command rollback target. */
+  previousImageRef?: string;
   nextPort: number;
+  /** Ports reclaimed from offboarded tenants, reused before nextPort advances. */
+  freePorts?: number[];
 }

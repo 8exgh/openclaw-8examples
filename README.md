@@ -43,7 +43,13 @@ npm run cli -- disable ana-reyes sms
 npm run cli -- nudge
 
 # Ship the newest OpenClaw + newest managed templates to every tenant
-npm run cli -- update
+# (--canary updates that tenant first and halts if it comes up unhealthy)
+npm run cli -- update --canary <your-own-tenant>
+
+# Offboarding: stop + reclaim the port; --purge-data also deletes everything
+# stored about the person (the deletion-request path)
+npm run cli -- offboard ana-reyes
+npm run cli -- offboard ana-reyes --purge-data --yes
 
 # Or drive everything over HTTP (for your signup form / admin UI)
 MOC_ADMIN_TOKEN=secret npm run serve   # POST /signup, GET /tenants, POST /fleet/update, ...
@@ -96,6 +102,8 @@ from cron for continuous updates.
 | `workspace/AGENTS.md`, `HEARTBEAT.md`, `skills/`, `capabilities/` | overwritten (managed) |
 | `.env` | merged — filled values always preserved |
 | `workspace/SOUL.md` | seeded once, then the tenant's/agent's own |
+| `auth-profile-secrets/` | never touched — **back this up**; it holds the encryption key for the tenant's stored OAuth tokens, and losing it invalidates every connected credential |
+| `browser-cache/` | never touched (Playwright/Chromium downloads) |
 | `workspace/nudges/`, `memory/`, everything else | never touched |
 
 ## Honest starting-point caveats
@@ -109,8 +117,23 @@ from cron for continuous updates.
   the API to your signup/billing flow). Automating this end-to-end is the obvious
   next step.
 - **State is JSON on disk** (`data/`), tenants are directories, containers run on
-  one host. That's right for the first ~50 customers; swap `store.ts` for a real DB
-  and `provisioner/docker.ts` for your orchestrator when you outgrow it.
+  one host. The *architecture* holds to ~50 customers; swap `store.ts` for a real DB
+  and the provisioner for your orchestrator when you outgrow it. But the **compute
+  ceiling arrives first**: tenants run with hard resource caps (4 GB text-only,
+  6 GB once a browser capability is on — see `src/provisioner/resources.ts`), so a
+  64 GB host realistically carries **12–15 mixed tenants**, not 50. Plan hosts
+  against that number.
+- **Secrets live in `.env` files** (mode 0600, tenant dirs 0700) and are injected as
+  container environment — anyone with Docker access on the host can read them via
+  `docker inspect`. The operator and host are trusted by every tenant; resistance to
+  a compromised host is a non-goal at this stage. Say that honestly in your customer
+  terms, and revisit a secret manager before the fleet is big enough to be a target.
+- **Browser sandboxing**: the default image is browser-capable
+  (`latest-browser`). Before relying on it for untrusted web content, verify
+  Chromium launches with its own sandbox intact under `cap_drop: ALL` +
+  `no-new-privileges` — if it silently falls back to `--no-sandbox`, treat that as
+  the trigger to move browser workloads to stronger isolation (gVisor/Kata or the
+  desktop-VM tier).
 - **Model access**: each tenant's `.env` gets `ANTHROPIC_API_KEY` (inherited from
   your environment at render time if set). Per-tenant keys/budgets are where you'd
   enforce billing.
@@ -121,5 +144,9 @@ from cron for continuous updates.
 
 ```cron
 0 * * * *  cd /path/to/repo && npm run cli -- nudge      # hourly nudge pass
-0 5 * * *  cd /path/to/repo && npm run cli -- update     # nightly fleet update
+0 5 * * *  cd /path/to/repo && npm run cli -- update --canary <your-own-tenant>
 ```
+
+Run your own instance as tenant zero and let it eat the bad releases: with
+`--canary`, the nightly update stops before touching customers if the new image
+comes up unhealthy, and `fleet.previousImageRef` records the rollback target.

@@ -13,6 +13,8 @@ export interface CapabilityDef {
   tagline: string;
   /** Lower = offered first when disabled. */
   priority: number;
+  /** Minimum container memory (GB) this capability needs once enabled. */
+  memoryGbFloor?: number;
   /** Enabled for every new signup without setup (no secrets needed). */
   defaultEnabled?: boolean;
   /** Secrets the operator (or customer) must fill in tenants/<id>/.env. */
@@ -80,9 +82,10 @@ You have access to this person's email.
     env: [
       { key: 'OPENCLAW_GCAL_CREDENTIALS', description: 'Google Calendar OAuth credentials for the calendar integration' },
     ],
-    configPatch: () => ({
-      skills: { calendar: { enabled: true } },
-    }),
+    // Calendar wiring is workspace-doc driven until a concrete gcal skill is
+    // installed; unverified config fragments fail OpenClaw's strict schema
+    // validation and block gateway startup ("skills: Invalid input").
+    configPatch: () => ({}),
     workspaceDoc: `# Capability: Calendar
 
 You manage this person's calendar.
@@ -111,9 +114,9 @@ You manage this person's calendar.
       { key: 'TWILIO_AUTH_TOKEN', description: 'Twilio auth token' },
       { key: 'TWILIO_FROM_NUMBER', description: 'The SMS number this assistant texts from' },
     ],
-    configPatch: () => ({
-      plugins: { entries: { 'twilio-sms': { enabled: true } } },
-    }),
+    // Wire to the concrete SMS plugin you deploy; a guessed plugins entry
+    // fails schema validation and blocks the gateway.
+    configPatch: () => ({}),
     workspaceDoc: `# Capability: Text messaging (SMS)
 
 You can send and receive SMS from this person's dedicated assistant number.
@@ -138,9 +141,8 @@ You can send and receive SMS from this person's dedicated assistant number.
     env: [
       { key: 'OPENCLAW_VOICE_PROVIDER_KEY', description: 'API key for the outbound voice provider (e.g. Twilio Voice / Vapi)' },
     ],
-    configPatch: () => ({
-      plugins: { entries: { voice: { enabled: true } } },
-    }),
+    // Same schema-safety rule as sms: no config until a real voice provider is wired.
+    configPatch: () => ({}),
     workspaceDoc: `# Capability: Phone calls
 
 You can place outbound calls on this person's behalf.
@@ -162,6 +164,8 @@ You can place outbound calls on this person's behalf.
     label: 'Website building',
     tagline: 'I build and update simple websites and landing pages for you — just describe what you want.',
     priority: 5,
+    // Live Chromium: 2–4 GB on its own during a session.
+    memoryGbFloor: 6,
     env: [
       { key: 'DEPLOY_TOKEN', description: 'Token for the hosting provider used to publish tenant sites (e.g. Vercel/Netlify/Cloudflare)' },
     ],

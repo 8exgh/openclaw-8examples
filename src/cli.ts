@@ -1,5 +1,5 @@
 import { CAPABILITIES, isCapabilityId } from './capabilities/registry.js';
-import { applyTenant, runNudge, runNudgesAll, setCapability, signup, summarize, updateFleet } from './ops.js';
+import { applyTenant, offboardTenant, runNudge, runNudgesAll, setCapability, signup, summarize, updateFleet } from './ops.js';
 import { managedVersion } from './provisioner/render.js';
 import { getTenant, loadFleet, loadTenants, tenantDir } from './store.js';
 import type { ChannelId } from './types.js';
@@ -52,8 +52,15 @@ Usage: npm run cli -- <command> [args]
   disable <tenant> <capability> Switch a capability off
   apply <tenant>                Re-render on current templates/config + restart
   nudge [tenant]                Run the nudge engine (all tenants if omitted)
-  update                        Fleet update: pull newest OpenClaw, re-render
-                                every tenant, rolling restart
+  update [--canary <tenant>]    Fleet update: pull newest OpenClaw, re-render
+                                every tenant, rolling restart. With --canary,
+                                that tenant updates first and must pass a
+                                health check before the rollout continues
+  offboard <tenant>             Stop the tenant's runtime, mark inactive,
+                                reclaim the port
+  offboard <tenant> --purge-data --yes
+                                ...and delete all stored data incl. contact
+                                info (deletion-request path; irreversible)
   status                        Fleet + per-tenant container status
   serve [--port 8787]           Start the HTTP control-plane API
 
@@ -89,7 +96,7 @@ async function main(): Promise<void> {
       for (const t of loadTenants()) {
         const s = summarize(t);
         const caps = Object.entries(s.capabilities).filter(([, on]) => on).map(([id]) => id).join(',');
-        console.log(`${s.id}\t${s.channel}\tport ${s.gatewayPort}\t[${caps}]\t${s.container}${s.upToDate ? '' : '\t(update pending)'}`);
+        console.log(`${s.id}\t${s.channel}\tport ${s.gatewayPort}\t[${caps}]\t${s.container}${s.upToDate ? '' : '\t(update pending)'}${s.offboarded ? '\t(offboarded)' : ''}`);
       }
       break;
     }
@@ -125,11 +132,23 @@ async function main(): Promise<void> {
       break;
     }
     case 'update': {
-      const result = updateFleet({ start });
+      const result = await updateFleet({ start, canary: str(flags, 'canary') });
       console.log(`Fleet now on ${result.imageRef} / managed ${result.managedVersion}`);
+      if (result.previousImageRef) console.log(`  rollback target: ${result.previousImageRef}`);
       for (const t of result.tenants) {
         console.log(`  ${t.id}: ${t.started ? 'restarted' : 'rendered'}${t.missingEnv.length ? ` (missing env: ${t.missingEnv.join(', ')})` : ''}`);
       }
+      break;
+    }
+    case 'offboard': {
+      const tenantId = positional[0];
+      if (!tenantId) throw new Error('Usage: offboard <tenant> [--purge-data --yes]');
+      const purge = flags.has('purge-data');
+      if (purge && !flags.has('yes')) {
+        throw new Error(`--purge-data permanently deletes tenants/${tenantId}/ and the stored record. Re-run with --yes to confirm.`);
+      }
+      const result = offboardTenant(tenantId, { purge });
+      console.log(purge ? `Purged ${result.tenant}: runtime stopped, data and record deleted.` : `Offboarded ${result.tenant}: runtime stopped, port reclaimed, data retained.`);
       break;
     }
     case 'status': {

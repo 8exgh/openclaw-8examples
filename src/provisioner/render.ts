@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import {
+  chmodSync,
+  chownSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -9,9 +11,28 @@ import {
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 import { CAPABILITIES, capability } from '../capabilities/registry.js';
 import { TEMPLATES_DIR, tenantDir } from '../store.js';
 import type { CapabilityId, Fleet, Tenant } from '../types.js';
+import { asDockerMem, resourcesFor } from './resources.js';
+
+/** The openclaw image runs as `node`, uid/gid 1000 — bind mounts must be writable by it. */
+const CONTAINER_UID = 1000;
+
+function ensureDirForContainer(dir: string, mode = 0o755): void {
+  mkdirSync(dir, { recursive: true, mode });
+  chmodSync(dir, mode);
+  // Only root can hand ownership to uid 1000; otherwise we rely on the
+  // documented constraint that the control plane runs as uid 1000 itself.
+  if (process.getuid?.() === 0) {
+    try {
+      chownSync(dir, CONTAINER_UID, CONTAINER_UID);
+    } catch {
+      /* best effort */
+    }
+  }
+}
 
 /** Bump when the managed layer changes in a way not captured by template files. */
 export const MANAGED_LAYER_VERSION = '0.1.0';
@@ -82,6 +103,7 @@ function channelConfig(tenant: Tenant): Record<string, unknown> {
 export function buildOpenclawConfig(tenant: Tenant): Record<string, unknown> {
   let config: Record<string, unknown> = {
     gateway: {
+      mode: 'local', // required by current OpenClaw; absent = start refused (exit 78)
       port: 18789,
       bind: 'lan', // container port is published only on the host's loopback (see compose file)
       auth: { token: '${OPENCLAW_GATEWAY_TOKEN}' },
@@ -182,10 +204,17 @@ function capabilitySections(tenant: Tenant): { enabled: string; upgrades: string
 export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
   const dir = tenantDir(tenant.id);
   const workspace = path.join(dir, 'workspace');
-  mkdirSync(path.join(dir, 'config'), { recursive: true });
-  mkdirSync(workspace, { recursive: true });
+  mkdirSync(dir, { recursive: true });
+  chmodSync(dir, 0o700); // holds config, workspace, and secret material
+  ensureDirForContainer(path.join(dir, 'config'));
+  ensureDirForContainer(workspace);
+  // Never re-rendered, never overwritten — losing this invalidates the
+  // tenant's stored OAuth tokens. Docker would auto-create it root-owned.
+  ensureDirForContainer(path.join(dir, 'auth-profile-secrets'), 0o700);
+  ensureDirForContainer(path.join(dir, 'browser-cache'));
 
   const imageRef = fleet.pinnedImageRef ?? fleet.image;
+  const res = resourcesFor(tenant);
 
   writeFileSync(
     path.join(dir, 'config', 'openclaw.json'),
@@ -198,6 +227,9 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
       IMAGE: imageRef,
       TENANT_ID: tenant.id,
       PORT: String(tenant.gatewayPort),
+      MEM_LIMIT: asDockerMem(res.memoryGb),
+      CPUS: String(res.cpus),
+      PIDS_LIMIT: String(res.pidsLimit),
     }),
   );
 

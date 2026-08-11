@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import { z } from 'zod';
 import { isCapabilityId } from './capabilities/registry.js';
-import { runNudgesAll, setCapability, signup, summarize, updateFleet } from './ops.js';
+import { offboardTenant, runNudgesAll, setCapability, signup, summarize, updateFleet } from './ops.js';
 import { getTenant, loadFleet, loadTenants } from './store.js';
 
 const SignupBody = z.object({
@@ -53,7 +53,16 @@ export async function startServer(port: number): Promise<void> {
 
   app.post('/nudges/run', async () => runNudgesAll());
 
-  app.post('/fleet/update', async () => updateFleet());
+  app.post('/fleet/update', async (req) => {
+    const { canary } = z.object({ canary: z.string().optional() }).parse(req.body ?? {});
+    return updateFleet({ canary });
+  });
+
+  app.post('/tenants/:id/offboard', async (req) => {
+    const { id } = req.params as { id: string };
+    const { purge } = z.object({ purge: z.boolean().optional() }).parse(req.body ?? {});
+    return offboardTenant(id, { purge });
+  });
 
   await app.listen({ port, host: '127.0.0.1' });
 }

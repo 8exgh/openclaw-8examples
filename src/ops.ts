@@ -1,15 +1,29 @@
+import { rmSync } from 'node:fs';
+import path from 'node:path';
 import { CAPABILITIES, capability } from './capabilities/registry.js';
 import { deliverToWorkspace, pickNudge } from './nudges/engine.js';
-import { composeUp, containerStatus, dockerAvailable, pullImage, resolveDigest } from './provisioner/docker.js';
-import { managedVersion, renderTenant } from './provisioner/render.js';
-import { getTenant, loadFleet, loadTenants, saveFleet, slugify, upsertTenant } from './store.js';
-import type { CapabilityId, ChannelId, NudgeRecord, Tenant } from './types.js';
+import { dockerAvailable, pullImage, resolveDigest } from './provisioner/docker.js';
+import { getProvisioner } from './provisioner/index.js';
+import { managedVersion } from './provisioner/render.js';
+import {
+  TENANTS_DIR,
+  getTenant,
+  loadFleet,
+  loadTenants,
+  saveFleet,
+  saveTenants,
+  slugify,
+  tenantDir,
+  upsertTenant,
+} from './store.js';
+import type { CapabilityId, ChannelId, NudgeRecord, Tenant, Tier } from './types.js';
 
 export interface SignupInput {
   name: string;
   phone?: string;
   email?: string;
   channel?: ChannelId;
+  tier?: Tier;
   /** Capabilities to switch on at signup, beyond the defaults. */
   enable?: CapabilityId[];
 }
@@ -20,17 +34,18 @@ export interface ApplyResult {
   started: boolean;
 }
 
-/** Render the tenant to disk on the current fleet release and (re)start its container. */
+/** Tenants that participate in rollouts, nudging, and billing. */
+export function activeTenants(): Tenant[] {
+  return loadTenants().filter((t) => !t.offboardedAt);
+}
+
+/** Render the tenant to disk on the current fleet release and (re)start its runtime. */
 export function applyTenant(tenant: Tenant, opts: { start?: boolean } = {}): ApplyResult {
   const fleet = loadFleet();
-  const missingEnv = renderTenant(tenant, fleet);
-
-  let started = false;
   const wantStart = opts.start !== false && process.env.MOC_NO_START !== '1';
-  if (wantStart && dockerAvailable()) {
-    composeUp(tenant);
-    started = true;
-  }
+  const { started, missingEnv } = getProvisioner(tenant.tier).apply(tenant, fleet, {
+    start: wantStart,
+  });
 
   tenant.applied = {
     imageRef: fleet.pinnedImageRef ?? fleet.image,
@@ -45,17 +60,19 @@ export function signup(input: SignupInput, opts: { start?: boolean } = {}): Appl
   const fleet = loadFleet();
   const now = new Date().toISOString();
 
+  const gatewayPort = fleet.freePorts?.length ? fleet.freePorts.shift()! : fleet.nextPort++;
+
   const tenant: Tenant = {
     id: slugify(input.name),
     name: input.name,
     contact: { phone: input.phone, email: input.email },
     channel: input.channel ?? 'whatsapp',
-    gatewayPort: fleet.nextPort,
+    tier: input.tier ?? 'container',
+    gatewayPort,
     createdAt: now,
     capabilities: {},
     nudgeLog: [],
   };
-  fleet.nextPort += 1;
   saveFleet(fleet);
 
   for (const def of CAPABILITIES) {
@@ -99,51 +116,132 @@ export function runNudge(tenant: Tenant): NudgeRecord | null {
 }
 
 export function runNudgesAll(): { tenant: string; nudge: NudgeRecord | null }[] {
-  return loadTenants().map((t) => ({ tenant: t.id, nudge: runNudge(t) }));
+  return activeTenants().map((t) => ({ tenant: t.id, nudge: runNudge(t) }));
 }
 
 export interface UpdateResult {
   imageRef: string;
+  previousImageRef?: string;
   managedVersion: string;
   tenants: { id: string; started: boolean; missingEnv: string[] }[];
 }
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** A tenant is healthy when its runtime reports an up-and-not-restarting state. */
+async function waitHealthy(tenant: Tenant, attempts = 6, gapMs = 5000): Promise<boolean> {
+  const provisioner = getProvisioner(tenant.tier);
+  for (let i = 0; i < attempts; i++) {
+    await sleep(gapMs);
+    const status = provisioner.status(tenant);
+    if (status.startsWith('Up') && !status.includes('Restarting')) return true;
+  }
+  return false;
+}
+
 /**
  * Fleet update: pull the newest OpenClaw image, pin its digest, then re-render
- * every tenant on the newest managed templates and rolling-restart them.
- * New signups automatically use the same pinned release.
+ * every active tenant on the newest managed templates and rolling-restart them.
+ * With `canary`, that tenant is updated first and must pass a health check
+ * before the rollout continues — run your own instance as tenant zero.
  */
-export function updateFleet(opts: { start?: boolean } = {}): UpdateResult {
+export async function updateFleet(
+  opts: { start?: boolean; canary?: string } = {},
+): Promise<UpdateResult> {
   const fleet = loadFleet();
 
   if (dockerAvailable()) {
     pullImage(fleet.image);
-    fleet.pinnedImageRef = resolveDigest(fleet.image) ?? fleet.image;
+    const next = resolveDigest(fleet.image) ?? fleet.image;
+    if (fleet.pinnedImageRef && fleet.pinnedImageRef !== next) {
+      fleet.previousImageRef = fleet.pinnedImageRef;
+    }
+    fleet.pinnedImageRef = next;
   }
   saveFleet(fleet);
 
-  const tenants = loadTenants().map((t) => {
-    const result = applyTenant(t, opts);
-    return { id: t.id, started: result.started, missingEnv: result.missingEnv };
-  });
+  const all = activeTenants();
+  if (opts.canary && !all.some((t) => t.id === opts.canary)) {
+    throw new Error(`Canary tenant not found or offboarded: ${opts.canary}`);
+  }
+  const order = opts.canary
+    ? [...all.filter((t) => t.id === opts.canary), ...all.filter((t) => t.id !== opts.canary)]
+    : all;
+
+  const tenants: UpdateResult['tenants'] = [];
+  for (let i = 0; i < order.length; i++) {
+    const tenant = order[i];
+    const result = applyTenant(tenant, opts);
+    tenants.push({ id: tenant.id, started: result.started, missingEnv: result.missingEnv });
+
+    if (i === 0 && opts.canary && result.started && !(await waitHealthy(tenant))) {
+      throw new Error(
+        `Canary ${tenant.id} unhealthy on ${fleet.pinnedImageRef ?? fleet.image} — rollout halted` +
+          (fleet.previousImageRef ? ` (previous release: ${fleet.previousImageRef})` : ''),
+      );
+    }
+  }
 
   return {
     imageRef: fleet.pinnedImageRef ?? fleet.image,
+    previousImageRef: fleet.previousImageRef,
     managedVersion: managedVersion(),
     tenants,
   };
+}
+
+/**
+ * Offboarding: stop the runtime, mark the tenant inactive, reclaim the port.
+ * With `purge`, also delete the tenant directory (config, workspace, secrets)
+ * and the stored record including contact info — the PIPEDA deletion path.
+ */
+export function offboardTenant(
+  tenantId: string,
+  opts: { purge?: boolean } = {},
+): { tenant: string; purged: boolean } {
+  const tenant = getTenant(tenantId);
+  if (tenant.offboardedAt && !opts.purge) {
+    return { tenant: tenant.id, purged: false };
+  }
+
+  getProvisioner(tenant.tier).teardown(tenant);
+
+  const fleet = loadFleet();
+  if (!fleet.freePorts?.includes(tenant.gatewayPort) && !tenant.offboardedAt) {
+    fleet.freePorts = [...(fleet.freePorts ?? []), tenant.gatewayPort];
+    saveFleet(fleet);
+  }
+
+  let purged = false;
+  if (opts.purge) {
+    // Containment: never delete outside the tenants directory.
+    const dir = path.resolve(tenantDir(tenant.id));
+    if (!dir.startsWith(path.resolve(TENANTS_DIR) + path.sep)) {
+      throw new Error(`Refusing to purge path outside tenants dir: ${dir}`);
+    }
+    rmSync(dir, { recursive: true, force: true });
+    saveTenants(loadTenants().filter((t) => t.id !== tenant.id));
+    purged = true;
+  } else {
+    tenant.offboardedAt = new Date().toISOString();
+    upsertTenant(tenant);
+  }
+
+  return { tenant: tenant.id, purged };
 }
 
 export interface TenantSummary {
   id: string;
   name: string;
   channel: ChannelId;
+  tier: Tier;
   gatewayPort: number;
   container: string;
   capabilities: Record<string, boolean>;
   managedVersion?: string;
   upToDate: boolean;
   nudges: number;
+  offboarded: boolean;
 }
 
 export function summarize(tenant: Tenant): TenantSummary {
@@ -152,13 +250,15 @@ export function summarize(tenant: Tenant): TenantSummary {
     id: tenant.id,
     name: tenant.name,
     channel: tenant.channel,
+    tier: tenant.tier ?? 'container',
     gatewayPort: tenant.gatewayPort,
-    container: containerStatus(tenant),
+    container: getProvisioner(tenant.tier).status(tenant),
     capabilities: Object.fromEntries(
       Object.entries(tenant.capabilities).map(([id, s]) => [id, !!s?.enabled]),
     ),
     managedVersion: tenant.applied?.managedVersion,
     upToDate: tenant.applied?.managedVersion === current,
     nudges: tenant.nudgeLog.length,
+    offboarded: !!tenant.offboardedAt,
   };
 }

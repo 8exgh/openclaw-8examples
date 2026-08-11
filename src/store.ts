@@ -13,7 +13,7 @@ const TENANTS_FILE = path.join(DATA_DIR, 'tenants.json');
 
 const DEFAULT_FLEET: Fleet = {
   releaseChannel: 'latest',
-  image: 'ghcr.io/openclaw/openclaw:latest',
+  image: 'ghcr.io/openclaw/openclaw:latest-browser',
   nextPort: 19001,
 };
 
