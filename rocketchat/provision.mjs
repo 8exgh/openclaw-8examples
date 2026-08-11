@@ -77,6 +77,7 @@ async function main() {
       type: 'webhook-outgoing',
       name: 'openclaw-bridge',
       enabled: true,
+      username: BOT_USER,
       event: 'sendMessage',
       channel: channels,
       urls: [HOOK_URL],
