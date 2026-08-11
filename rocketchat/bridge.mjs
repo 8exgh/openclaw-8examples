@@ -113,9 +113,19 @@ const server = http.createServer((req, res) => {
   });
 });
 
-login()
-  .then(() => server.listen(PORT, () => console.log(`[bridge] listening on :${PORT} -> ${RC_URL}`)))
-  .catch((e) => {
-    console.error(`[bridge] startup failed: ${e.message}`);
-    process.exit(1);
-  });
+// Retry login rather than exit — Rocket.Chat may be unreachable until the
+// Cloudflare tunnel is up. systemd keeps us alive; we just keep trying.
+async function start() {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await login();
+      break;
+    } catch (e) {
+      console.warn(`[bridge] login attempt ${attempt} failed (${e.message}); retrying in 15s`);
+      await new Promise((r) => setTimeout(r, 15000));
+    }
+  }
+  server.listen(PORT, () => console.log(`[bridge] listening on :${PORT} -> ${RC_URL}`));
+}
+
+start();
