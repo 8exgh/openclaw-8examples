@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 const RC_URL = (process.env.RC_URL || 'http://localhost:3060').replace(/\/$/, '');
 const ADMIN_USER = process.env.RC_ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.RC_ADMIN_PASS || 'openclaw-admin';
+const START = Number(process.env.START || 1);
 const COUNT = Number(process.env.COUNT || 20);
 
 // readable-ish: no ambiguous chars (0/O/1/l/I), 14 chars
@@ -33,7 +34,7 @@ async function main() {
   auth = { authToken: r.j.data.authToken, userId: r.j.data.userId };
 
   const results = [];
-  for (let i = 1; i <= COUNT; i++) {
+  for (let i = START; i <= COUNT; i++) {
     const username = `openclaw${i}`;
     const info = await api(`/api/v1/users.info?username=${username}`);
     if (!info.ok || !info.j.user) { results.push([username, `(not found: ${JSON.stringify(info.j).slice(0, 80)})`]); continue; }

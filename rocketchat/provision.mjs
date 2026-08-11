@@ -69,23 +69,29 @@ async function main() {
     }));
   }
 
-  // one outgoing webhook covering all openclaw channels
+  // one outgoing webhook covering all openclaw channels — create OR update so
+  // re-running with a higher COUNT extends coverage to the new channels.
   const channels = Array.from({ length: COUNT }, (_, k) => `#openclaw${k + 1}`).join(',');
-  await idempotent('outgoing webhook', () => api('/api/v1/integrations.create', {
-    method: 'POST',
-    body: {
-      type: 'webhook-outgoing',
-      name: 'openclaw-bridge',
-      enabled: true,
-      username: BOT_USER,
-      event: 'sendMessage',
-      channel: channels,
-      urls: [HOOK_URL],
-      token: HOOK_TOKEN,
-      scriptEnabled: false,
-      impersonateUser: false,
-    },
-  }));
+  const body = {
+    type: 'webhook-outgoing',
+    name: 'openclaw-bridge',
+    enabled: true,
+    username: BOT_USER,
+    event: 'sendMessage',
+    channel: channels,
+    urls: [HOOK_URL],
+    token: HOOK_TOKEN,
+    scriptEnabled: false,
+    impersonateUser: false,
+  };
+  const list = await api('/api/v1/integrations.list?count=0');
+  const existing = list.j?.integrations?.find((x) => x.name === 'openclaw-bridge' && x.type === 'webhook-outgoing');
+  if (existing) {
+    await idempotent('update webhook (all channels)', () =>
+      api('/api/v1/integrations.update', { method: 'POST', body: { integrationId: existing._id, ...body } }));
+  } else {
+    await idempotent('create webhook', () => api('/api/v1/integrations.create', { method: 'POST', body }));
+  }
 
   console.log(`\nDone. ${COUNT} users/channels + bot + webhook -> ${HOOK_URL}`);
   console.log('Users: openclaw1..openclaw' + COUNT + ' (password = username). Bot: ' + BOT_USER);
