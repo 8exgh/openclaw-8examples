@@ -46,6 +46,8 @@ export interface Tenant {
   tier?: Tier;
   /** Operator override; omitted means derived from enabled capabilities. */
   resources?: Partial<Resources>;
+  /** Telegram peers allowed to reach this bot (e.g. ["telegram:123"]); empty/absent = open to anyone. */
+  telegramAllowFrom?: string[];
   createdAt: string;
   capabilities: Partial<Record<CapabilityId, CapabilityState>>;
   nudgeLog: NudgeRecord[];

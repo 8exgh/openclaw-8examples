@@ -76,22 +76,30 @@ export function deepMerge(
 function channelConfig(tenant: Tenant, opts: { channelReady: boolean }): Record<string, unknown> {
   const allowFrom = tenant.contact.phone ? [tenant.contact.phone] : [];
   switch (tenant.channel) {
-    case 'telegram':
+    case 'telegram': {
+      // Stay disabled until a real bot token is present — a placeholder token
+      // crash-loops the gateway. The web chat works regardless.
+      // Locked to specific peers when telegramAllowFrom is set (e.g.
+      // ["telegram:8097846352"]); otherwise open to anyone. 'open'/'allowlist'
+      // both REQUIRE an allowFrom — without it OpenClaw silently drops every
+      // message after polling it (["*"] is the open wildcard).
+      const locked = (tenant.telegramAllowFrom?.length ?? 0) > 0;
+      const audience = locked ? tenant.telegramAllowFrom! : ['*'];
+      const policy = locked ? 'allowlist' : 'open';
       return {
         telegram: {
-          // Stay disabled until a real bot token is present — a placeholder
-          // token crash-loops the gateway. The web chat works regardless.
           enabled: opts.channelReady,
           botToken: '${TELEGRAM_BOT_TOKEN}',
-          // 'open' = respond to any DM (no pairing approval). It REQUIRES
-          // allowFrom:["*"] — without the wildcard, OpenClaw silently drops
-          // every DM after polling it. Convenient for the operator's own bots;
-          // for real customers switch to 'pairing'/'allowlist' so a
-          // discoverable bot can't burn the account's tokens.
-          dmPolicy: 'open',
-          allowFrom: ['*'],
+          dmPolicy: policy,
+          allowFrom: audience,
+          // Group responses enabled; requireMention so it only answers when
+          // addressed (also keeps Opus token spend sane in busy groups).
+          groupPolicy: policy,
+          groupAllowFrom: audience,
+          requireMention: true,
         },
       };
+    }
     case 'signal':
       return { signal: { enabled: true, dmPolicy: allowFrom.length ? 'allowlist' : 'pairing', allowFrom } };
     case 'whatsapp':
