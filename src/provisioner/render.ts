@@ -92,11 +92,11 @@ function channelConfig(tenant: Tenant, opts: { channelReady: boolean }): Record<
           botToken: '${TELEGRAM_BOT_TOKEN}',
           dmPolicy: policy,
           allowFrom: audience,
-          // Group responses enabled; requireMention so it only answers when
-          // addressed (also keeps Opus token spend sane in busy groups).
+          // Group responses enabled. In groups the bot only sees mentions/replies
+          // unless privacy mode is disabled in BotFather, so it stays quiet
+          // otherwise without needing an (unsupported) requireMention flag.
           groupPolicy: policy,
           groupAllowFrom: audience,
-          requireMention: true,
         },
       };
     }
