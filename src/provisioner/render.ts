@@ -73,13 +73,15 @@ export function deepMerge(
   return out;
 }
 
-function channelConfig(tenant: Tenant): Record<string, unknown> {
+function channelConfig(tenant: Tenant, opts: { channelReady: boolean }): Record<string, unknown> {
   const allowFrom = tenant.contact.phone ? [tenant.contact.phone] : [];
   switch (tenant.channel) {
     case 'telegram':
       return {
         telegram: {
-          enabled: true,
+          // Stay disabled until a real bot token is present — a placeholder
+          // token crash-loops the gateway. The web chat works regardless.
+          enabled: opts.channelReady,
           botToken: '${TELEGRAM_BOT_TOKEN}',
           // Telegram allowlists use tg ids; pairing lets the customer approve themselves on first message.
           dmPolicy: 'pairing',
@@ -100,7 +102,10 @@ function channelConfig(tenant: Tenant): Record<string, unknown> {
 }
 
 /** Build the tenant's openclaw.json: managed base + every enabled capability's patch. */
-export function buildOpenclawConfig(tenant: Tenant): Record<string, unknown> {
+export function buildOpenclawConfig(
+  tenant: Tenant,
+  opts: { channelReady?: boolean } = {},
+): Record<string, unknown> {
   let config: Record<string, unknown> = {
     gateway: {
       mode: 'local', // required by current OpenClaw; absent = start refused (exit 78)
@@ -116,7 +121,7 @@ export function buildOpenclawConfig(tenant: Tenant): Record<string, unknown> {
         sandbox: { mode: 'non-main', scope: 'agent' },
       },
     },
-    channels: channelConfig(tenant),
+    channels: channelConfig(tenant, { channelReady: opts.channelReady ?? false }),
     session: {
       dmScope: 'per-channel-peer',
       reset: { mode: 'daily', atHour: 4 },
@@ -216,9 +221,17 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
   const imageRef = fleet.pinnedImageRef ?? fleet.image;
   const res = resourcesFor(tenant);
 
+  // Telegram only enables once a real bot token is in .env (from a prior render
+  // that the operator filled in) — placeholder tokens crash-loop the gateway.
+  const envFile = path.join(dir, '.env');
+  const existingToken = existsSync(envFile)
+    ? parseEnv(readFileSync(envFile, 'utf8')).get('TELEGRAM_BOT_TOKEN')
+    : undefined;
+  const channelReady = !!existingToken && existingToken !== 'changeme';
+
   writeFileSync(
     path.join(dir, 'config', 'openclaw.json'),
-    JSON.stringify(buildOpenclawConfig(tenant), null, 2) + '\n',
+    JSON.stringify(buildOpenclawConfig(tenant, { channelReady }), null, 2) + '\n',
   );
 
   writeFileSync(
