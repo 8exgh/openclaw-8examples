@@ -11,3 +11,6 @@ data/
 .vscode/
 
 *.log
+
+# shared read-only browser cache (large, host-local)
+shared/

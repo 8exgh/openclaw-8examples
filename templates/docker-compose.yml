@@ -15,6 +15,10 @@ services:
       - DISPLAY=:99
       - OPENCLAW_BROWSER_HEADLESS=false
       - OPENCLAW_BROWSER_NO_SANDBOX=true
+      # Chromium comes from one shared read-only copy (see volumes) instead of a
+      # ~1GB per-tenant install — this is what makes dozens of tenants fit on
+      # one host's disk. Falls back to ./browser-cache if the shared dir is absent.
+      - PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
     # Start Xvfb, then hand off to the image's real command (node openclaw.mjs
     # gateway). Entrypoint stays tini via init:true.
     command:
@@ -31,8 +35,10 @@ services:
       # the .openclaw mount — do not nest this under ./config. Losing it
       # invalidates every stored OAuth credential for this tenant.
       - ./auth-profile-secrets:/home/node/.config/openclaw
-      # Playwright/Chromium downloads and profile cache.
+      # Chrome's writable runtime profile/cache (small).
       - ./browser-cache:/home/node/.cache
+      # One shared read-only Chromium for the whole fleet (see PLAYWRIGHT_BROWSERS_PATH).
+      - ../../shared/ms-playwright:/opt/ms-playwright:ro
     security_opt:
       - no-new-privileges:true
     cap_drop:
