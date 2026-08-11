@@ -113,19 +113,18 @@ const server = http.createServer((req, res) => {
   });
 });
 
-// Retry login rather than exit — Rocket.Chat may be unreachable until the
-// Cloudflare tunnel is up. systemd keeps us alive; we just keep trying.
-async function start() {
-  for (let attempt = 1; ; attempt++) {
+// Start the webhook receiver immediately so it's reachable, and keep trying to
+// log in in the background — Rocket.Chat may be unreachable until the Cloudflare
+// tunnel is up. handleMessage() re-logs-in on demand if auth isn't ready yet.
+server.listen(PORT, () => console.log(`[bridge] listening on :${PORT} -> ${RC_URL}`));
+
+(async function loginLoop() {
+  for (let attempt = 1; !auth; attempt++) {
     try {
       await login();
-      break;
     } catch (e) {
       console.warn(`[bridge] login attempt ${attempt} failed (${e.message}); retrying in 15s`);
       await new Promise((r) => setTimeout(r, 15000));
     }
   }
-  server.listen(PORT, () => console.log(`[bridge] listening on :${PORT} -> ${RC_URL}`));
-}
-
-start();
+})();
