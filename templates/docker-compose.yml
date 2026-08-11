@@ -7,6 +7,20 @@ services:
     restart: unless-stopped
     init: true
     env_file: .env
+    environment:
+      # Real headful Chromium on a virtual display — full rendering, not
+      # headless. Xvfb is started by the command below; the browser attaches
+      # to DISPLAY. NO_SANDBOX because cap_drop:ALL removes what Chrome's own
+      # sandbox needs (the container is the isolation boundary).
+      - DISPLAY=:99
+      - OPENCLAW_BROWSER_HEADLESS=false
+      - OPENCLAW_BROWSER_NO_SANDBOX=true
+    # Start Xvfb, then hand off to the image's real command (node openclaw.mjs
+    # gateway). Entrypoint stays tini via init:true.
+    command:
+      - /bin/bash
+      - -lc
+      - "Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & exec node openclaw.mjs gateway"
     ports:
       # Gateway is only reachable from the host; front it with your reverse proxy.
       - "127.0.0.1:{{PORT}}:18789"
