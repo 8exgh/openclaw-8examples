@@ -139,16 +139,37 @@ You can send and receive SMS from this person's dedicated assistant number.
     tagline: 'I make the calls you dread — bookings, support lines, hold music and all.',
     priority: 4,
     env: [
-      { key: 'OPENCLAW_VOICE_PROVIDER_KEY', description: 'API key for the outbound voice provider (e.g. Twilio Voice / Vapi)' },
+      { key: 'PHONE_GATEWAY_URL', description: 'Base URL of the phone-call gateway (e.g. http://192.168.4.56:3052)' },
     ],
-    // Same schema-safety rule as sms: no config until a real voice provider is wired.
+    // The gateway is plain HTTP the agent drives via curl; no openclaw.json
+    // plugin config needed.
     configPatch: () => ({}),
     workspaceDoc: `# Capability: Phone calls
 
-You can place outbound calls on this person's behalf.
+You can place real outbound phone calls through the phone gateway at
+$PHONE_GATEWAY_URL. One HTTP request starts the call; an autonomous voice loop
+conducts the conversation toward your stated goal and hangs up; you then read
+the transcript back.
 
-- Great for: booking appointments, checking on orders, support lines, restaurant reservations.
-- Always agree the goal and any personal info you may share before dialing.
+Start a call (returns immediately with an id):
+
+    curl -s -X POST "$PHONE_GATEWAY_URL/orchestrations" \\
+      -H 'content-type: application/json' \\
+      -d '{"to": "+15551234567", "goal": "Book a table for 2 at 7pm Friday under Ana", "openingLine": "Hi! I am calling to book a table."}'
+
+Poll every few seconds until status is no longer "running":
+
+    curl -s "$PHONE_GATEWAY_URL/orchestrations/<orchestrationId>"
+
+The record contains liveTranscript while running and the full turns when done.
+Caller turns are annotated with how the person spoke (volume, pace,
+stuttering) — use that when judging how the call went.
+
+Rules:
+- Always agree the goal, who to call, and any personal info you may share BEFORE dialing.
+- Never call emergency or premium-rate numbers. One call at a time.
+- If the transcript shows the callee was upset or asked not to be called, do
+  not call again without explicit permission.
 - After the call, report the outcome in two sentences: what happened, what's next.
 `,
     offerNudges: [
