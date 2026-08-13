@@ -26,12 +26,17 @@ services:
       # ~1GB per-tenant install — this is what makes dozens of tenants fit on
       # one host's disk. Falls back to ./browser-cache if the shared dir is absent.
       - PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+      # Call-home telemetry (openclaw-telemetry on npm). The access token
+      # comes from the tenant's .env (OPENCLAW_TELEMETRY_TOKEN, written by
+      # the control plane); with no token the reporter simply never starts.
+      - OPENCLAW_TELEMETRY_URL=https://8examples.com/openclaw/telemetry
+      - OPENCLAW_TELEMETRY_CLAW={{TENANT_ID}}
     # Start Xvfb, then hand off to the image's real command (node openclaw.mjs
     # gateway). Entrypoint stays tini via init:true.
     command:
       - /bin/bash
       - -lc
-      - "Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & exec node openclaw.mjs gateway"
+      - "Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & if [ -n \"$$OPENCLAW_TELEMETRY_TOKEN\" ]; then (npx -y openclaw-telemetry run >/tmp/telemetry.log 2>&1 &); fi; exec node openclaw.mjs gateway"
     ports:
       # Gateway is only reachable from the host; front it with your reverse proxy.
       - "127.0.0.1:{{PORT}}:18789"

@@ -174,6 +174,12 @@ function renderEnv(tenant: Tenant, dir: string): string[] {
 
   ensure('OPENCLAW_GATEWAY_TOKEN', randomBytes(24).toString('hex'));
   ensure('ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY ?? 'changeme');
+  // Fleet call-home telemetry (openclaw-telemetry on npm): the token is
+  // inherited from the control plane's environment at render time; when
+  // absent, the tenant's reporter simply stays off.
+  if (process.env.OPENCLAW_TELEMETRY_TOKEN) {
+    ensure('OPENCLAW_TELEMETRY_TOKEN', process.env.OPENCLAW_TELEMETRY_TOKEN);
+  }
   if (tenant.channel === 'telegram') ensure('TELEGRAM_BOT_TOKEN', 'changeme');
   for (const [id, state] of Object.entries(tenant.capabilities)) {
     if (!state?.enabled) continue;
