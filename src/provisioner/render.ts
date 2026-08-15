@@ -140,6 +140,16 @@ export function buildOpenclawConfig(
       bind: 'lan', // container port is published only on the host's loopback (see compose file)
       auth: { token: '${OPENCLAW_GATEWAY_TOKEN}' },
     },
+    // cap_drop: ALL prevents Chromium's Linux sandbox from initializing. The
+    // container is the isolation boundary, so every managed browser launch
+    // must carry --no-sandbox explicitly. Headless can still be overridden by
+    // a tenant-specific compose file when a virtual display is desired.
+    browser: {
+      enabled: true,
+      headless: true,
+      noSandbox: true,
+      extraArgs: ['--no-sandbox'],
+    },
     agents: {
       defaults: {
         workspace: '/home/node/.openclaw/workspace',
@@ -150,7 +160,7 @@ export function buildOpenclawConfig(
           // fleet: refresh-token rotation would make the tenants invalidate
           // one another's credentials.
           fallbacks: [
-            tenant.openaiAuth ? 'openai-codex/gpt-5.6-sol' : 'openai/gpt-5.6-sol',
+            'openai/gpt-5.6-sol',
             'kimi/k3',
           ],
         },
@@ -167,7 +177,6 @@ export function buildOpenclawConfig(
       reset: { mode: 'daily', atHour: 4 },
     },
     plugins: {
-      allow: ['kimi'],
       entries: {
         kimi: { enabled: true },
       },

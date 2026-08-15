@@ -33,10 +33,14 @@ services:
       - OPENCLAW_TELEMETRY_CLAW={{TENANT_ID}}
     # Start Xvfb, then hand off to the image's real command (node openclaw.mjs
     # gateway). Entrypoint stays tini via init:true.
+    # The telemetry reporter runs in a background supervisor loop: `timeout 86400`
+    # recycles it once a day, and each relaunch does `npx openclaw-telemetry@latest`
+    # with prefer-online so the newest published version is pulled — i.e. the
+    # package self-updates every 24h AND restarts with the container.
     command:
       - /bin/bash
       - -lc
-      - "Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & if [ -n \"$$OPENCLAW_TELEMETRY_TOKEN\" ]; then (npx -y openclaw-telemetry run >/tmp/telemetry.log 2>&1 &); fi; exec node openclaw.mjs gateway"
+      - "Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & if [ -n \"$$OPENCLAW_TELEMETRY_TOKEN\" ]; then ( while true; do timeout 86400 npm_config_prefer_online=true npx -y openclaw-telemetry@latest run; sleep 5; done >/tmp/telemetry.log 2>&1 & ); fi; exec node openclaw.mjs gateway"
     ports:
       # Gateway is only reachable from the host; front it with your reverse proxy.
       - "127.0.0.1:{{PORT}}:18789"
