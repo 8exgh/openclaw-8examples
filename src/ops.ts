@@ -1,4 +1,4 @@
-import { rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { CAPABILITIES, capability } from './capabilities/registry.js';
 import { deliverToWorkspace, pickNudge } from './nudges/engine.js';
@@ -16,10 +16,12 @@ import {
   tenantDir,
   upsertTenant,
 } from './store.js';
-import type { CapabilityId, ChannelId, NudgeRecord, Tenant, Tier } from './types.js';
+import type { CapabilityId, ChannelId, NudgeRecord, OpenAIAuth, Tenant, Tier } from './types.js';
 
 export interface SignupInput {
   name: string;
+  /** Explicit tenant id; otherwise derived from name. */
+  id?: string;
   phone?: string;
   email?: string;
   channel?: ChannelId;
@@ -62,8 +64,13 @@ export function signup(input: SignupInput, opts: { start?: boolean } = {}): Appl
 
   const gatewayPort = fleet.freePorts?.length ? fleet.freePorts.shift()! : fleet.nextPort++;
 
+  const id = input.id ?? slugify(input.name);
+  if (loadTenants().some((t) => t.id === id)) {
+    throw new Error(`Tenant id already taken: ${id}`);
+  }
+
   const tenant: Tenant = {
-    id: slugify(input.name),
+    id,
     name: input.name,
     contact: { phone: input.phone, email: input.email },
     channel: input.channel ?? 'whatsapp',
@@ -86,6 +93,72 @@ export function signup(input: SignupInput, opts: { start?: boolean } = {}): Appl
   // Day-one nudge so the assistant starts selling the next capability immediately.
   runNudge(tenant);
 
+  return applyTenant(tenant, opts);
+}
+
+function parseJwtExp(token: string): number | undefined {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return undefined;
+    const json = Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    return (JSON.parse(json) as { exp?: number }).exp;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeOpenAIAuthProfile(tenantId: string, credential: unknown): OpenAIAuth {
+  const cred = credential as Record<string, unknown> | undefined;
+  const tokens = cred?.tokens as Record<string, string> | undefined;
+  const accessToken = tokens?.access_token;
+  const refreshToken = tokens?.refresh_token;
+  const idToken = tokens?.id_token;
+  const accountId = tokens?.account_id;
+  if (!accessToken || !refreshToken || !idToken || !accountId) {
+    throw new Error(
+      'Credential must contain tokens.access_token, tokens.refresh_token, tokens.id_token, and tokens.account_id',
+    );
+  }
+
+  const exp = parseJwtExp(accessToken);
+  if (!exp) {
+    throw new Error('Could not parse expiry from access_token JWT');
+  }
+
+  const dir = path.join(tenantDir(tenantId), 'config', 'agents', 'main', 'agent');
+  mkdirSync(dir, { recursive: true });
+
+  const profile = {
+    version: 1,
+    profiles: {
+      'openai-codex:default': {
+        type: 'oauth',
+        provider: 'openai-codex',
+        access: accessToken,
+        refresh: refreshToken,
+        expires: exp * 1000,
+        idToken,
+        accountId,
+      },
+    },
+  };
+
+  const file = path.join(dir, 'auth-profiles.json');
+  writeFileSync(file, JSON.stringify(profile, null, 2) + '\n', { mode: 0o600 });
+  chmodSync(file, 0o600);
+
+  return { profileId: 'openai-codex:default', enabledAt: new Date().toISOString() };
+}
+
+export function applyOpenAIAuth(
+  tenantId: string,
+  credentialPath: string,
+  opts: { start?: boolean } = {},
+): ApplyResult {
+  const tenant = getTenant(tenantId);
+  const credential = JSON.parse(readFileSync(credentialPath, 'utf8')) as unknown;
+  tenant.openaiAuth = writeOpenAIAuthProfile(tenantId, credential);
+  upsertTenant(tenant);
   return applyTenant(tenant, opts);
 }
 

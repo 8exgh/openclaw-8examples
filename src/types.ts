@@ -32,6 +32,12 @@ export interface AppliedRelease {
   appliedAt: string;
 }
 
+export interface OpenAIAuth {
+  /** Auth profile id, e.g. "openai-codex:default". */
+  profileId: string;
+  enabledAt: string;
+}
+
 export type Tier = 'container' | 'desktop';
 
 export interface Tenant {
@@ -54,6 +60,8 @@ export interface Tenant {
   applied?: AppliedRelease;
   /** Set when the tenant is offboarded; excluded from rollouts and nudging. */
   offboardedAt?: string;
+  /** ChatGPT / OpenAI Codex OAuth profile applied by the operator. */
+  openaiAuth?: OpenAIAuth;
 }
 
 export interface Fleet {

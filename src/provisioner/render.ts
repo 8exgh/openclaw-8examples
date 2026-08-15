@@ -73,6 +73,20 @@ export function deepMerge(
   return out;
 }
 
+/**
+ * OpenClaw does not currently expose native heartbeat jitter. Give each tenant
+ * a stable interval between 4h00m and 4h59m so fleet restarts do not leave all
+ * assistants firing on the same cadence.
+ */
+function heartbeatEvery(tenantId: string): string {
+  let hash = 2166136261;
+  for (const char of tenantId) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${240 + ((hash >>> 0) % 60)}m`;
+}
+
 function channelConfig(tenant: Tenant, opts: { channelReady: boolean }): Record<string, unknown> {
   const allowFrom = tenant.contact.phone ? [tenant.contact.phone] : [];
   switch (tenant.channel) {
@@ -129,8 +143,18 @@ export function buildOpenclawConfig(
     agents: {
       defaults: {
         workspace: '/home/node/.openclaw/workspace',
-        model: { primary: 'anthropic/claude-opus-4-8' },
-        heartbeat: { every: '30m', target: 'last' },
+        model: {
+          primary: 'anthropic/claude-opus-4-8',
+          // Authentication is installed separately in each tenant's persisted
+          // auth store. Never clone a ChatGPT OAuth refresh token across the
+          // fleet: refresh-token rotation would make the tenants invalidate
+          // one another's credentials.
+          fallbacks: [
+            tenant.openaiAuth ? 'openai-codex/gpt-5.6-sol' : 'openai/gpt-5.6-sol',
+            'kimi/k3',
+          ],
+        },
+        heartbeat: { every: heartbeatEvery(tenant.id), target: 'last' },
         // Container tier: the container IS the isolation boundary, and there's
         // no Docker inside it — non-main/all would need Docker-in-Docker and
         // fail every agent turn. Desktop VMs do have Docker, so sandbox there.
@@ -142,12 +166,57 @@ export function buildOpenclawConfig(
       dmScope: 'per-channel-peer',
       reset: { mode: 'daily', atHour: 4 },
     },
+    plugins: {
+      allow: ['kimi'],
+      entries: {
+        kimi: { enabled: true },
+      },
+    },
+    models: {
+      mode: 'merge',
+      providers: {
+        kimi: {
+          // K3 is the general flagship model available to the fleet's Kimi
+          // subscription. Do not add the coding-tuned `kimi-for-coding` model.
+          baseUrl: 'https://api.kimi.com/coding/v1',
+          apiKey: '${KIMI_API_KEY}',
+          api: 'openai-completions',
+          models: [
+            {
+              id: 'k3',
+              name: 'Kimi K3',
+              reasoning: true,
+              input: ['text', 'image'],
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              contextWindow: 1048576,
+              maxTokens: 131072,
+            },
+          ],
+        },
+      },
+    },
+    auth: {
+      profiles: {
+        'kimi:manual': { provider: 'kimi', mode: 'api_key' },
+      },
+    },
   };
 
   for (const [id, state] of Object.entries(tenant.capabilities)) {
     if (!state?.enabled) continue;
     config = deepMerge(config, capability(id as CapabilityId).configPatch(tenant));
   }
+
+  if (tenant.openaiAuth) {
+    config = deepMerge(config, {
+      plugins: {
+        entries: {
+          codex: { enabled: true },
+        },
+      },
+    });
+  }
+
   return config;
 }
 
@@ -174,6 +243,7 @@ function renderEnv(tenant: Tenant, dir: string): string[] {
 
   ensure('OPENCLAW_GATEWAY_TOKEN', randomBytes(24).toString('hex'));
   ensure('ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY ?? 'changeme');
+  ensure('KIMI_API_KEY', process.env.KIMI_API_KEY ?? 'changeme');
   // Fleet call-home telemetry (openclaw-telemetry on npm): the token is
   // inherited from the control plane's environment at render time; when
   // absent, the tenant's reporter simply stays off.
@@ -251,9 +321,25 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     : undefined;
   const channelReady = !!existingToken && existingToken !== 'changeme';
 
+  // OpenClaw writes config provenance metadata and restores its last-known-good
+  // backup during shutdown when that metadata suddenly disappears. Preserve it
+  // across managed renders so an intentional config update is not rolled back
+  // while docker compose recreates the container.
+  const configFile = path.join(dir, 'config', 'openclaw.json');
+  let existingMeta: unknown;
+  if (existsSync(configFile)) {
+    try {
+      existingMeta = (JSON.parse(readFileSync(configFile, 'utf8')) as Record<string, unknown>).meta;
+    } catch {
+      /* A malformed config will be replaced by the managed render below. */
+    }
+  }
+  const renderedConfig = buildOpenclawConfig(tenant, { channelReady });
+  if (existingMeta !== undefined) renderedConfig.meta = existingMeta;
+
   writeFileSync(
-    path.join(dir, 'config', 'openclaw.json'),
-    JSON.stringify(buildOpenclawConfig(tenant, { channelReady }), null, 2) + '\n',
+    configFile,
+    JSON.stringify(renderedConfig, null, 2) + '\n',
   );
 
   writeFileSync(

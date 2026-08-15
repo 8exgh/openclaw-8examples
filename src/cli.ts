@@ -1,5 +1,6 @@
+import { existsSync } from 'node:fs';
 import { CAPABILITIES, isCapabilityId } from './capabilities/registry.js';
-import { applyTenant, offboardTenant, runNudge, runNudgesAll, setCapability, signup, summarize, updateFleet } from './ops.js';
+import { applyOpenAIAuth, applyTenant, offboardTenant, runNudge, runNudgesAll, setCapability, signup, summarize, updateFleet } from './ops.js';
 import { managedVersion } from './provisioner/render.js';
 import { getTenant, loadFleet, loadTenants, tenantDir } from './store.js';
 import type { ChannelId } from './types.js';
@@ -43,7 +44,7 @@ const HELP = `managed-openclaw — control plane for a fleet of managed OpenClaw
 
 Usage: npm run cli -- <command> [args]
 
-  signup --name <name> [--phone +1555...] [--email a@b.com]
+  signup --name <name> [--id <id>] [--phone +1555...] [--email a@b.com]
          [--channel whatsapp|telegram|signal] [--enable email,sms] [--no-start]
                                 Provision a new person's managed assistant
   list                          All tenants, one line each
@@ -51,6 +52,9 @@ Usage: npm run cli -- <command> [args]
   enable <tenant> <capability>  Switch a capability on (re-renders + restarts)
   disable <tenant> <capability> Switch a capability off
   apply <tenant>                Re-render on current templates/config + restart
+  apply-openai <tenant> <credential-file>
+                                Install a ChatGPT/Codex OAuth credential as the
+                                tenant's OpenAI fallback auth profile
   nudge [tenant]                Run the nudge engine (all tenants if omitted)
   update [--canary <tenant>]    Fleet update: pull newest OpenClaw, re-render
                                 every tenant, rolling restart. With --canary,
@@ -81,6 +85,7 @@ async function main(): Promise<void> {
       const result = signup(
         {
           name,
+          id: str(flags, 'id'),
           phone: str(flags, 'phone'),
           email: str(flags, 'email'),
           channel: str(flags, 'channel') as ChannelId | undefined,
@@ -119,6 +124,19 @@ async function main(): Promise<void> {
     case 'apply': {
       const result = applyTenant(getTenant(positional[0]), { start });
       console.log(`Applied ${managedVersion()} to ${positional[0]}`);
+      reportApply(result);
+      break;
+    }
+    case 'apply-openai': {
+      const [tenantId, credentialFile] = positional;
+      if (!tenantId || !credentialFile) {
+        throw new Error('Usage: apply-openai <tenant> <credential-file>');
+      }
+      if (!existsSync(credentialFile)) {
+        throw new Error(`Credential file not found: ${credentialFile}`);
+      }
+      const result = applyOpenAIAuth(tenantId, credentialFile, { start });
+      console.log(`Installed OpenAI auth profile on ${tenantId}`);
       reportApply(result);
       break;
     }

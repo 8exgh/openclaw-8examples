@@ -134,9 +134,13 @@ from cron for continuous updates.
   `no-new-privileges` — if it silently falls back to `--no-sandbox`, treat that as
   the trigger to move browser workloads to stronger isolation (gVisor/Kata or the
   desktop-VM tier).
-- **Model access**: each tenant's `.env` gets `ANTHROPIC_API_KEY` (inherited from
-  your environment at render time if set). Per-tenant keys/budgets are where you'd
-  enforce billing.
+- **Model access**: Anthropic is the primary and `openai/gpt-5.6-sol` is the
+  managed fallback. Each tenant's `.env` gets `ANTHROPIC_API_KEY` (inherited
+  from your environment at render time if set). Install OpenAI authentication
+  separately in each tenant's persistent auth store; do not copy one ChatGPT
+  OAuth refresh token across containers because token rotation will cause the
+  tenants to invalidate each other. For a shared fleet-wide backup, prefer a
+  Platform API key with appropriate project budgets and spend limits.
 - The gateway of each tenant publishes only on `127.0.0.1:<port>` — put your
   reverse proxy / tailnet in front for remote admin access.
 
