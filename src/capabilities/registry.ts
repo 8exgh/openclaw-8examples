@@ -144,33 +144,92 @@ You can send and receive SMS from this person's dedicated assistant number.
     // The gateway is plain HTTP the agent drives via curl; no openclaw.json
     // plugin config needed.
     configPatch: () => ({}),
-    workspaceDoc: `# Capability: Phone calls
+    workspaceDoc: `# Capability: Phone calls and SMS
 
-You can place real outbound phone calls through the phone gateway at
-$PHONE_GATEWAY_URL. One HTTP request starts the call; an autonomous voice loop
-conducts the conversation toward your stated goal and hangs up; you then read
-the transcript back.
+You can place real outbound phone calls and send/receive texts through the
+phone gateway at $PHONE_GATEWAY_URL. For calls, one HTTP request states a
+goal; a server-side voice loop conducts the conversation and hangs up; you
+read back a transcript annotated with how the person spoke.
 
-Start a call (returns immediately with an id):
+If you have been issued your own phone number (check mailbox.md-style notes
+in this workspace or your channel history), pass it as "from" on every call
+and SMS so people see YOUR number; otherwise omit "from" to use the shared
+gateway number.
+
+## Make a call (one-shot orchestration)
 
     curl -s -X POST "$PHONE_GATEWAY_URL/orchestrations" \\
       -H 'content-type: application/json' \\
-      -d '{"to": "+15551234567", "goal": "Book a table for 2 at 7pm Friday under Ana", "openingLine": "Hi! I am calling to book a table."}'
+      -d '{"to": "+15551234567", "goal": "Book a table for 2 at 7pm Friday under Ana. Get a confirmation.", "openingLine": "Hi! I am calling to book a table."}'
 
-Poll every few seconds until status is no longer "running":
+Fields: "to" (E.164, required), "goal" (what the voice agent should achieve),
+"openingLine" (optional fixed first sentence), "voice" (optional), "from"
+(optional; your own number if you have one). Immediate 202 response contains
+"orchestrationId" and "statusUrl".
+
+## Poll for the result
 
     curl -s "$PHONE_GATEWAY_URL/orchestrations/<orchestrationId>"
 
-The record contains liveTranscript while running and the full turns when done.
-Caller turns are annotated with how the person spoke (volume, pace,
-stuttering) — use that when judging how the call went.
+Poll every few seconds until "status" is "ended" or "failed".
+- "liveTranscript" fills while the call runs; "turns" is the full
+  conversation once it ends.
+- Caller turns carry prosody annotations (volume: whisper|normal|loud|yell,
+  pace: calm|slow|normal|fast, stuttering) — use them when judging how the
+  call went.
+- "reason": "hangup" means our agent ended it; "remote_hangup" means they did.
+- "errors" lists in-call failures; "events" is a timeline for debugging.
 
-Rules:
+## Phone menus / keypad (DTMF)
+
+The voice agent can both press keys and hear them. Write goals like
+"navigate the menu: press 2 for billing, then ask about the invoice" — the
+agent dials the keys itself (they appear as [pressed 2] agent turns). Keys
+the other side presses appear as [pressed 42] caller turns.
+
+## Driving the conversation yourself (advanced)
+
+If you want to decide each line instead of delegating to the built-in brain:
+
+    curl -s -X POST "$PHONE_GATEWAY_URL/calls" -H 'content-type: application/json' -d '{"to": "+15551234567"}'
+
+then connect a WebSocket to wss://<gateway-host>/control/<callId> and send
+JSON: {"type":"say","id":"s1","text":"..."} (FIFO queue),
+{"type":"sendDigits","id":"d1","digits":"1w2#"} (DTMF, w = half-second
+pause), {"type":"clear"} (barge-in), {"type":"hangup"}. The server streams
+call.state, say.started/completed/aborted, speech.started/stopped,
+transcript.delta, transcript (final + prosody), and dtmf events.
+
+## SMS
+
+Send:
+
+    curl -s -X POST "$PHONE_GATEWAY_URL/sms" \\
+      -H 'content-type: application/json' \\
+      -d '{"to": "+15551234567", "body": "Your table for 2 at 7pm Friday is booked."}'
+
+Add "from" with your own number if you have one. Receive by polling (inbound
+messages appear here; there is no push):
+
+    curl -s "$PHONE_GATEWAY_URL/sms?days=7&limit=50"
+
+Filter for "direction": "inbound" and your number in "to". Poll GET /sms
+when expecting a reply.
+
+## Receiving calls
+
+Not supported yet: the gateway is outbound-only. Nothing answers if someone
+calls your number; use SMS or email for inbound until pickup ships.
+
+## Rules
+
 - Always agree the goal, who to call, and any personal info you may share BEFORE dialing.
 - Never call emergency or premium-rate numbers. One call at a time.
 - If the transcript shows the callee was upset or asked not to be called, do
   not call again without explicit permission.
-- After the call, report the outcome in two sentences: what happened, what's next.
+- Texts: no bulk unsolicited messages; outreach needs consent, your identity,
+  and a stop path (Canada's anti-spam law, CASL).
+- After each call, report the outcome in two sentences: what happened, what's next.
 `,
     offerNudges: [
       'Anything you\'ve been putting off because it needs a phone call? Turn on calls and I\'ll sit through the hold music for you.',
