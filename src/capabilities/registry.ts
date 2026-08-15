@@ -218,8 +218,26 @@ when expecting a reply.
 
 ## Receiving calls
 
-Not supported yet: the gateway is outbound-only. Nothing answers if someone
-calls your number; use SMS or email for inbound until pickup ships.
+The gateway answers incoming calls FOR you with a standing persona you
+register once; you then discover answered calls (with transcripts) by
+polling. You never react to a ring in real time.
+
+Register/update your answering persona (do this once, and again if your
+person changes what you should say):
+
+    curl -s -X POST "$PHONE_GATEWAY_URL/inbound-config" \\
+      -H 'content-type: application/json' \\
+      -d '{"goal": "You are answering on behalf of <your person>. Find out who is calling and why, take a message with callback details, keep it brief.", "openingLine": "Hi! Who am I speaking with?"}'
+
+On your heartbeat, check for new answered calls and follow up on anything
+that needs action (a message to relay, a callback to make):
+
+    curl -s "$PHONE_GATEWAY_URL/orchestrations?direction=inbound"
+
+Each entry has "from" (the caller), "startedAt", "status", and a
+"statusUrl" for the full transcript. The list is in-memory and resets when
+the gateway restarts — treat it as "recent calls", and re-POST your
+inbound-config if a GET /inbound-config ever comes back null.
 
 ## Rules
 
