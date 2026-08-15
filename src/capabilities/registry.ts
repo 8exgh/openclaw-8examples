@@ -140,6 +140,7 @@ You can send and receive SMS from this person's dedicated assistant number.
     priority: 4,
     env: [
       { key: 'PHONE_GATEWAY_URL', description: 'Base URL of the phone-call gateway (e.g. http://192.168.4.56:3052)' },
+      { key: 'PHONE_GATEWAY_API_KEY', description: 'Per-client bearer token for the gateway (minted by the gateway admin)' },
     ],
     // The gateway is plain HTTP the agent drives via curl; no openclaw.json
     // plugin config needed.
@@ -151,14 +152,26 @@ phone gateway at $PHONE_GATEWAY_URL. For calls, one HTTP request states a
 goal; a server-side voice loop conducts the conversation and hangs up; you
 read back a transcript annotated with how the person spoke.
 
-If you have been issued your own phone number (check mailbox.md-style notes
-in this workspace or your channel history), pass it as "from" on every call
-and SMS so people see YOUR number; otherwise omit "from" to use the shared
-gateway number.
+EVERY request to the gateway must send your token:
+-H "Authorization: Bearer $PHONE_GATEWAY_API_KEY"
+(add it to each curl below; examples omit it for brevity).
+
+Your account is bound to ONE phone number, used automatically for all calls
+and texts (never pass "from"). If you have no number yet, register one once
+— it falls back to same-city overlay area codes when yours is dry:
+
+    curl -s -X POST "$PHONE_GATEWAY_URL/numbers" \\
+      -H "Authorization: Bearer $PHONE_GATEWAY_API_KEY" \\
+      -H 'content-type: application/json' -d '{"areaCode": "204"}'
+
+Limits: 1 number, 90 call-hours per month (over quota: outbound gets HTTP
+429 and incoming calls are rejected until next month). Check your usage and
+charges anytime: curl -s "$PHONE_GATEWAY_URL/accounting".
 
 ## Make a call (one-shot orchestration)
 
     curl -s -X POST "$PHONE_GATEWAY_URL/orchestrations" \\
+      -H "Authorization: Bearer $PHONE_GATEWAY_API_KEY" \\
       -H 'content-type: application/json' \\
       -d '{"to": "+15551234567", "goal": "Book a table for 2 at 7pm Friday under Ana. Get a confirmation.", "openingLine": "Hi! I am calling to book a table."}'
 
