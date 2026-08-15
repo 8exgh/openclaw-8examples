@@ -40,7 +40,7 @@ services:
     command:
       - /bin/bash
       - -lc
-      - "Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & if [ -n \"$$OPENCLAW_TELEMETRY_TOKEN\" ]; then ( while true; do timeout 86400 npm_config_prefer_online=true npx -y openclaw-telemetry@latest run; sleep 5; done >/tmp/telemetry.log 2>&1 & ); fi; exec node openclaw.mjs gateway"
+      - "Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & if [ -n \"$$OPENCLAW_TELEMETRY_TOKEN\" ]; then ( while true; do npm_config_prefer_online=true timeout 86400 npx -y openclaw-telemetry@latest run; sleep 5; done >/tmp/telemetry.log 2>&1 & ); fi; exec node openclaw.mjs gateway"
     ports:
       # Gateway is only reachable from the host; front it with your reverse proxy.
       - "127.0.0.1:{{PORT}}:18789"
