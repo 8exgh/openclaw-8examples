@@ -248,9 +248,9 @@ that needs action (a message to relay, a callback to make):
     curl -s "$PHONE_GATEWAY_URL/orchestrations?direction=inbound"
 
 Each entry has "from" (the caller), "startedAt", "status", and a
-"statusUrl" for the full transcript. The list is in-memory and resets when
-the gateway restarts — treat it as "recent calls", and re-POST your
-inbound-config if a GET /inbound-config ever comes back null.
+"statusUrl" for the full transcript. History and your answering persona are
+persisted server-side (event-sourced) and survive gateway restarts; the
+list serves the most recent 500 calls.
 
 ## Rules
 
