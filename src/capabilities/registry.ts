@@ -50,7 +50,7 @@ export const CAPABILITIES: CapabilityDef[] = [
             match: { path: 'gmail' },
             action: 'agent',
             sessionKey: 'hook:gmail',
-            sessionMode: 'persistent',
+            name: 'gmail',
           },
         ],
       },
@@ -142,10 +142,23 @@ You can send and receive SMS from this person's dedicated assistant number.
       { key: 'PHONE_GATEWAY_URL', description: 'Base URL of the phone-call gateway (e.g. http://192.168.4.56:3052)' },
       { key: 'PHONE_GATEWAY_API_KEY', description: 'Per-client bearer token for the gateway (minted by the gateway admin)' },
     ],
-    // The gateway is plain HTTP the agent drives via curl; no openclaw.json
-    // plugin config needed. (A hooks mapping for push pings needs a schema
-    // shape this openclaw version accepts - see gateway notify-config.)
-    configPatch: () => ({}),
+    // Phone-gateway webhook pings arrive as agent hooks: POST /hooks/phone
+    // (x-openclaw-token auth) wakes the agent with the event JSON immediately
+    // instead of waiting for a heartbeat. Mapping fields must match
+    // HookMappingSchema (no sessionMode - it fails validation).
+    configPatch: () => ({
+      hooks: {
+        enabled: true,
+        mappings: [
+          {
+            match: { path: 'phone' },
+            action: 'agent',
+            sessionKey: 'hook:phone',
+            name: 'phone-gateway',
+          },
+        ],
+      },
+    }),
     workspaceDoc: `# Capability: Phone calls and SMS
 
 You can place real outbound phone calls and send/receive texts through the
