@@ -157,7 +157,6 @@ You can send and receive SMS from this person's dedicated assistant number.
             action: 'agent',
             wakeMode: 'now',
             sessionKey: 'hook:phone',
-            sessionMode: 'persistent',
             name: 'phone-gateway',
             // Feature work can legitimately take much longer than a live call.
             timeoutSeconds: 3600,
