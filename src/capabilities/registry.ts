@@ -158,6 +158,10 @@ You can send and receive SMS from this person's dedicated assistant number.
             wakeMode: 'now',
             sessionKey: 'hook:phone',
             name: 'phone-gateway',
+            // Phone events are background work. A hook session has no chat
+            // destination, so attempting delivery makes an otherwise
+            // successful run fail after the work is complete.
+            deliver: false,
             // Feature work can legitimately take much longer than a live call.
             timeoutSeconds: 3600,
             // The gateway sends a self-describing message field in every ping.
