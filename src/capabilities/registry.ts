@@ -149,6 +149,8 @@ You can send and receive SMS from this person's dedicated assistant number.
     configPatch: () => ({
       hooks: {
         enabled: true,
+        // Same env-substitution mechanism the gateway auth token uses.
+        token: '${OPENCLAW_GATEWAY_TOKEN}',
         mappings: [
           {
             match: { path: 'phone' },
