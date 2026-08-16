@@ -142,9 +142,22 @@ You can send and receive SMS from this person's dedicated assistant number.
       { key: 'PHONE_GATEWAY_URL', description: 'Base URL of the phone-call gateway (e.g. http://192.168.4.56:3052)' },
       { key: 'PHONE_GATEWAY_API_KEY', description: 'Per-client bearer token for the gateway (minted by the gateway admin)' },
     ],
-    // The gateway is plain HTTP the agent drives via curl; no openclaw.json
-    // plugin config needed.
-    configPatch: () => ({}),
+    // Phone-gateway webhook pings arrive as agent hooks (same shape as the
+    // gmail hook): POST /hooks/phone with the gateway's event JSON wakes the
+    // agent immediately instead of waiting for a heartbeat.
+    configPatch: () => ({
+      hooks: {
+        enabled: true,
+        mappings: [
+          {
+            match: { path: 'phone' },
+            action: 'agent',
+            sessionKey: 'hook:phone',
+            sessionMode: 'persistent',
+          },
+        ],
+      },
+    }),
     workspaceDoc: `# Capability: Phone calls and SMS
 
 You can place real outbound phone calls and send/receive texts through the
