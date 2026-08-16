@@ -155,8 +155,11 @@ You can send and receive SMS from this person's dedicated assistant number.
           {
             match: { path: 'phone' },
             action: 'agent',
+            wakeMode: 'now',
             sessionKey: 'hook:phone',
             name: 'phone-gateway',
+            // The gateway sends a self-describing message field in every ping.
+            messageTemplate: '{{message}}',
           },
         ],
       },
