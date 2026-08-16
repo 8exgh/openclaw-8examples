@@ -157,7 +157,10 @@ You can send and receive SMS from this person's dedicated assistant number.
             action: 'agent',
             wakeMode: 'now',
             sessionKey: 'hook:phone',
+            sessionMode: 'persistent',
             name: 'phone-gateway',
+            // Feature work can legitimately take much longer than a live call.
+            timeoutSeconds: 3600,
             // The gateway sends a self-describing message field in every ping.
             messageTemplate: '{{message}}',
           },
@@ -234,6 +237,27 @@ GET /orchestrations list): execute the callback_promised requests, POST
 each result to /respond, then IMMEDIATELY place a new call to the same
 number delivering the answer (goal: "You promised to call back with X -
 deliver it: ..."). Never leave a promised callback undone.
+
+## Long work promised on a call
+
+Requests such as implementing code, changing a website, producing a document,
+or doing research continue AFTER hangup. A promise to do the work is not the
+result. On a followup.promised hook:
+
+1. Fetch the orchestration record and append an in-progress entry to
+   \`phone/TASKS.md\` with its orchestration id, callback number, requested work,
+   and the exact completion check. Create the file if needed.
+2. Do the complete task. For code: obtain the authorized repository, implement,
+   test, commit, deploy through that project's existing deployment path, and
+   verify the live behavior. Do not claim "live" from a local test or a push.
+3. Only then POST the completed result to \`/respond\` and place the promised
+   callback to the original caller (inbound: record.from; outbound: record.to).
+4. Mark the task completed with the callback orchestration id. If genuinely
+   blocked, record the blocker and call back to explain exactly what is needed.
+
+On every heartbeat, resume any non-terminal entry in \`phone/TASKS.md\` and query
+\`/orchestrations?status=ended\` for \`followUpRequired: true\`. This is the
+restart/recovery path; never wait for the person to remind you.
 
 ## Phone menus / keypad (DTMF)
 

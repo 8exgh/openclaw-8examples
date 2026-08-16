@@ -44,6 +44,8 @@ services:
     ports:
       # Gateway is only reachable from the host; front it with your reverse proxy.
       - "127.0.0.1:{{PORT}}:18789"
+      # The phone gateway reaches authenticated hooks over the private tailnet.
+      - "100.97.6.94:{{PORT}}:18789"
     volumes:
       - ./config:/home/node/.openclaw
       - ./workspace:/home/node/.openclaw/workspace

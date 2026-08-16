@@ -1,0 +1,63 @@
+name: Deploy managed OpenClaw fleet
+
+on:
+  workflow_dispatch:
+    inputs:
+      canary:
+        description: Tenant to update first
+        required: false
+        default: openclaw1
+  push:
+    branches: [main]
+
+concurrency:
+  group: managed-openclaw-fleet
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, X64, openclaw-dc]
+    steps:
+      - name: Update control plane and roll out tenants
+        env:
+          CANARY: ${{ inputs.canary || 'openclaw1' }}
+          OPENCLAW_PHONE_HOOK_URL_TEMPLATE: ${{ vars.OPENCLAW_PHONE_HOOK_URL_TEMPLATE }}
+        run: |
+          set -euo pipefail
+          cd "$HOME/managed-openclaw"
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+          npm ci
+          npm run typecheck
+          npm run cli -- update --canary "$CANARY"
+          phone_tenants=$(jq '[.[] | select(.offboardedAt == null and .capabilities.phone.enabled == true)] | length' data/tenants.json)
+          if [ "$phone_tenants" -gt 0 ]; then
+            [ -n "$OPENCLAW_PHONE_HOOK_URL_TEMPLATE" ] || {
+              echo "OPENCLAW_PHONE_HOOK_URL_TEMPLATE is required for $phone_tenants phone-enabled tenants"; exit 1;
+            }
+            case "$OPENCLAW_PHONE_HOOK_URL_TEMPLATE" in
+              http://100.*'{port}'*|https://*'{port}'*) ;;
+              *) echo "OPENCLAW_PHONE_HOOK_URL_TEMPLATE must be a tailnet HTTP or HTTPS URL containing {port}"; exit 1;;
+            esac
+            jq -r '.[] | select(.offboardedAt == null and .capabilities.phone.enabled == true) | .id' data/tenants.json |
+            while read -r tenant; do
+              env_file="tenants/$tenant/.env"
+              gateway=$(sed -n 's/^PHONE_GATEWAY_URL=//p' "$env_file")
+              phone_key=$(sed -n 's/^PHONE_GATEWAY_API_KEY=//p' "$env_file")
+              hook_token=$(sed -n 's/^OPENCLAW_GATEWAY_TOKEN=//p' "$env_file")
+              port=$(jq -r --arg tenant "$tenant" '.[] | select(.id == $tenant) | .gatewayPort' data/tenants.json)
+              hook_url="${OPENCLAW_PHONE_HOOK_URL_TEMPLATE//\{tenant\}/$tenant}"
+              hook_url="${hook_url//\{port\}/$port}"
+              [ -n "$gateway" ] && [ -n "$phone_key" ] && [ -n "$hook_token" ] || {
+                echo "missing phone credentials for $tenant"; exit 1;
+              }
+              curl --fail-with-body --silent --show-error \
+                -X POST "$gateway/notify-config" \
+                -H "Authorization: Bearer $phone_key" \
+                -H 'content-type: application/json' \
+                --data "$(jq -nc --arg url "$hook_url" --arg token "$hook_token" \
+                  '{url:$url,headers:{"x-openclaw-token":$token}}')" >/dev/null
+              echo "registered phone callback hook for $tenant"
+            done
+          fi
