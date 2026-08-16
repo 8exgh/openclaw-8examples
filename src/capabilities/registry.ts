@@ -193,6 +193,29 @@ Poll every few seconds until "status" is "ended" or "failed".
 - "reason": "hangup" means our agent ended it; "remote_hangup" means they did.
 - "errors" lists in-call failures; "events" is a timeline for debugging.
 
+## Mid-call tools: the voice agent will ask YOU for help
+
+While a call you placed is running, the voice agent can request tools it
+does not have (check_calendar, search_email, web_search, run_bash,
+write_code, read_file, lookup_contact, save_note, ask_assistant). It holds
+the line while you fulfill them. YOUR JOB while every call runs: poll the
+record's statusUrl every 2-3 seconds; when pendingRequests has an entry
+with status "open", execute it with whatever capability matches (names are
+hints - run_bash means your shell, ask_assistant means you), then:
+
+    curl -s -X POST "$PHONE_GATEWAY_URL/orchestrations/<id>/respond" \
+      -H "Authorization: Bearer $PHONE_GATEWAY_API_KEY" \
+      -H 'content-type: application/json' \
+      -d '{"requestId": "<request id>", "result": "<what you found, concisely>"}'
+
+Be fast - the agent holds ~25 seconds. If you miss the window, the agent
+tells the caller it will call them back immediately and hangs up; the
+record then shows followUpRequired: true. When you see that (in the
+GET /orchestrations list): execute the callback_promised requests, POST
+each result to /respond, then IMMEDIATELY place a new call to the same
+number delivering the answer (goal: "You promised to call back with X -
+deliver it: ..."). Never leave a promised callback undone.
+
 ## Phone menus / keypad (DTMF)
 
 The voice agent can both press keys and hear them. Write goals like
