@@ -39,25 +39,19 @@ export const CAPABILITIES: CapabilityDef[] = [
     label: 'Email',
     tagline: 'I read, triage, draft, and chase your email so your inbox stops being a job.',
     priority: 1,
-    env: [
-      { key: 'OPENCLAW_GMAIL_CREDENTIALS', description: 'Path or JSON for the Gmail OAuth credentials used by the email integration' },
-    ],
-    configPatch: () => ({
-      hooks: {
-        enabled: true,
-        mappings: [
-          {
-            match: { path: 'gmail' },
-            action: 'agent',
-            sessionKey: 'hook:gmail',
-            name: 'gmail',
-          },
-        ],
-      },
-    }),
+    // Provider-neutral. Managed Migadu credentials live in mode-0600
+    // workspace/mailboxes/*.md; connected-account providers may add their own
+    // integration separately without making this capability lie about access.
+    env: [],
+    configPatch: () => ({}),
     workspaceDoc: `# Capability: Email
 
 You have access to this person's email.
+
+- Read workspace/mailbox.md for the account index, then the referenced
+  mode-0600 file in workspace/mailboxes/ for credentials and IMAP/SMTP hosts.
+- If no managed mailbox is listed, use the connected email provider configured
+  for this tenant. Never claim email is connected until one of those exists.
 
 - Triage on every heartbeat: flag what actually needs them, summarize the rest.
 - Draft replies for anything routine; send only after they approve (until they tell you to just send).
