@@ -37,9 +37,25 @@ for KEY in "$BASE"/*/site_deploy_key; do
   fi
 
   if [ "$AHEAD" -gt 0 ]; then
+    STATUS="$TDIR/workspace/website-deploy-status.md"
+    SHA=$(git -C "$DIR" rev-parse HEAD)
+    BLOCKED=""
+    while IFS= read -r path; do
+      case "$path" in
+        .github|.github/*|.gitmodules) BLOCKED="$path"; break ;;
+      esac
+    done < <(git -C "$DIR" diff --name-only "origin/$BR..$BR")
+    if [ -n "$BLOCKED" ]; then
+      printf '# Website deployment status\n\nStatus: blocked\nCommit: %s\nReason: protected deployment path changed: %s\n\nRevert that path and commit again. Website content changes remain allowed.\n' "$SHA" "$BLOCKED" > "$STATUS"
+      echo "$(date -Is) $TENANT: blocked protected path $BLOCKED"
+      continue
+    fi
+
+    printf '# Website deployment status\n\nStatus: publishing\nCommit: %s\nQueued: %s\n\nThe trusted publisher accepted this commit. GitHub Actions will build, deploy, and verify the exact version.\n' "$SHA" "$(date -u +%FT%TZ)" > "$STATUS"
     if git -C "$DIR" push -q origin "$BR" 2>/dev/null; then
       echo "$(date -Is) $TENANT: pushed $AHEAD commit(s)"
     else
+      printf '# Website deployment status\n\nStatus: push failed; the publisher will retry\nCommit: %s\nLast attempt: %s\n' "$SHA" "$(date -u +%FT%TZ)" > "$STATUS"
       echo "$(date -Is) $TENANT: PUSH FAILED"
     fi
   fi
