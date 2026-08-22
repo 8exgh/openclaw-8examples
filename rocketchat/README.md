@@ -65,8 +65,9 @@ Nothing else changes — the bridge already serves every channel.
 ## REST rate limiter
 
 `set-rate-limit.mjs` raises Rocket.Chat's REST limiter defaults
-(`API_Default_Rate_Limiter_Calls` per `API_Default_Rate_Limiter_Time` ms, per
-endpoint per client IP; stock default 10 per minute). Run it through the devops
+(`API_Enable_Rate_Limiter_Limit_Calls_Default` per
+`API_Enable_Rate_Limiter_Limit_Time_Default` ms, per endpoint per client IP;
+stock default 10 per minute). Run it through the devops
 `rc-rate-limit.yml` workflow (inputs `calls`, default 600, and `time_ms`). The
 8examples squeeze-page demo chat tripped the stock limit for every visitor
 from the site's single IP, which is why this exists.

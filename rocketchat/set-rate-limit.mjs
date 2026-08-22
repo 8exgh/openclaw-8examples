@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Raise (or restore) Rocket.Chat's REST API rate limiter defaults. The limiter
-// allows API_Default_Rate_Limiter_Calls requests per API_Default_Rate_Limiter_Time
-// milliseconds per endpoint per client IP, and the stock default (10 per minute)
+// allows N requests per window per endpoint per client IP (settings
+// API_Enable_Rate_Limiter_Limit_Calls_Default / _Limit_Time_Default on 6.x; older
+// ids are tried too), and the stock default (10 per minute)
 // is far too low for server-side integrations: the 8examples squeeze-page demo
 // chat polled groups.history from one IP and tripped it for every visitor.
 // Rocket.Chat rebuilds its limiter rules when these settings change; no restart.
@@ -31,6 +32,22 @@ async function readSetting(id) {
   return r.j.value;
 }
 
+// Setting ids differ across Rocket.Chat versions; pick the first one that exists.
+async function findSettingId(candidates) {
+  for (const id of candidates) {
+    const r = await api(`/api/v1/settings/${id}`);
+    if (r.ok) return id;
+  }
+  const seen = [];
+  for (let offset = 0; offset < 5000; offset += 100) {
+    const r = await api(`/api/v1/settings?count=100&offset=${offset}`);
+    const page = r.ok && Array.isArray(r.j.settings) ? r.j.settings : [];
+    for (const s of page) if (/Rate_Limit/i.test(s._id)) seen.push(`${s._id}=${JSON.stringify(s.value)}`);
+    if (page.length < 100) break;
+  }
+  throw new Error(`none of ${candidates.join(', ')} exist; rate-limit settings visible: ${seen.join(' ') || '(none)'}`);
+}
+
 async function writeSetting(id, value) {
   const r = await api(`/api/v1/settings/${id}`, { method: 'POST', body: { value } });
   if (!r.ok) throw new Error(`could not set ${id}: ${JSON.stringify(r.j).slice(0, 200)}`);
@@ -42,14 +59,17 @@ async function main() {
   auth = { authToken: r.j.data.authToken, userId: r.j.data.userId };
 
   const enabled = await readSetting('API_Enable_Rate_Limiter');
-  const before = { calls: await readSetting('API_Default_Rate_Limiter_Calls'), timeMs: await readSetting('API_Default_Rate_Limiter_Time') };
+  const CALLS_ID = await findSettingId(['API_Enable_Rate_Limiter_Limit_Calls_Default', 'API_Default_Rate_Limiter_Calls']);
+  const TIME_ID = await findSettingId(['API_Enable_Rate_Limiter_Limit_Time_Default', 'API_Default_Rate_Limiter_Time']);
+  console.log(`settings: ${CALLS_ID}, ${TIME_ID}`);
+  const before = { calls: await readSetting(CALLS_ID), timeMs: await readSetting(TIME_ID) };
   console.log(`rate limiter enabled: ${enabled}`);
   console.log(`before: ${before.calls} calls per ${before.timeMs} ms per endpoint per IP`);
 
-  await writeSetting('API_Default_Rate_Limiter_Calls', CALLS);
-  await writeSetting('API_Default_Rate_Limiter_Time', TIME_MS);
+  await writeSetting(CALLS_ID, CALLS);
+  await writeSetting(TIME_ID, TIME_MS);
 
-  const after = { calls: await readSetting('API_Default_Rate_Limiter_Calls'), timeMs: await readSetting('API_Default_Rate_Limiter_Time') };
+  const after = { calls: await readSetting(CALLS_ID), timeMs: await readSetting(TIME_ID) };
   console.log(`after:  ${after.calls} calls per ${after.timeMs} ms per endpoint per IP`);
   if (after.calls !== CALLS || after.timeMs !== TIME_MS) throw new Error('settings did not persist as requested');
 }
