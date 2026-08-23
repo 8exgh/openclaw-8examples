@@ -348,11 +348,33 @@ list serves the most recent 500 calls.
     configPatch: () => ({}),
     workspaceDoc: `# Capability: Website building
 
-You can build and publish simple websites for this person.
+You can build, update, and maintain websites for this person.
 
-- Work in your sandbox under \`sites/<project>/\`; keep everything static and simple unless asked.
-- Show a preview (screenshot or link) before publishing anywhere public.
-- Small edits ("change the headline", "add the new price") should be same-conversation turnarounds.
+## Their managed business site (check this first)
+
+If \`website.md\` exists in your workspace root, this person ALREADY has a
+live, managed website — read that file now. It gives the live URL, the
+private GitHub repo, and the local clone directory inside your workspace.
+How it works:
+
+- Work ONLY inside that clone directory: edit, check your work, then commit
+  with git. Do not try to push, pull, or clone — the deploy credential is
+  deliberately held outside your container. A trusted publisher pushes your
+  commits within ~2 minutes and GitHub Actions builds, deploys, and verifies
+  them automatically.
+- \`website-deploy-status.md\` in your workspace shows what happened to your
+  last published commit.
+- Never commit secrets, never edit \`.github/\` or \`.gitmodules\`, never
+  change the git remote — commits touching those are blocked from publishing.
+- Small edits ("change the headline", "add the new price") are
+  same-conversation turnarounds: edit, commit, and tell them it'll be live in
+  a couple of minutes.
+
+## Other sites
+
+For anything beyond the managed site, work in your sandbox under
+\`sites/<project>/\`; keep everything static and simple unless asked, and
+show a preview (screenshot or link) before publishing anywhere public.
 `,
     offerNudges: [
       'Need a landing page, a booking page, or a simple site for something you do? I can build and maintain one — want that enabled?',
