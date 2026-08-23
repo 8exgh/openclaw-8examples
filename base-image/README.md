@@ -98,3 +98,10 @@ containers; this image is the VM-driver counterpart. The intended split: this ba
 holds everything common; per-tenant identity (openclaw.json, workspace, Claude
 token seed) arrives at first boot via a NoCloud cloud-init seed, and durable state
 lives on a second data disk so base-image upgrades never touch it.
+
+The control plane already renders the identity/network part of that seed:
+`npm run cli -- seed <tenant>` produces `tenants/<tenant>/seed/` (+ `seed.iso`)
+with the hostname, the tailscale join args (auth key, tags, the tenant's sticky
+residential exit node — see the main README's egress section), and optionally
+the Claude token seed. Attach the ISO to a fresh overlay of this image and boot.
+openclaw.json/workspace seeding is still the open half of the track.

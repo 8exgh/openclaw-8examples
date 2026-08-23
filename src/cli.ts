@@ -1,9 +1,21 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { CAPABILITIES, isCapabilityId } from './capabilities/registry.js';
+import {
+  addExitNode,
+  assignEgress,
+  assignmentCounts,
+  checkEgress,
+  exitNodePool,
+  migrateEgress,
+  removeExitNode,
+  tailscaleOnline,
+  tenantTag,
+} from './egress.js';
 import { applyOpenAIAuth, applyTenant, offboardTenant, runNudge, runNudgesAll, setCapability, signup, summarize, updateFleet } from './ops.js';
 import { managedVersion } from './provisioner/render.js';
+import { renderSeed } from './provisioner/seed.js';
 import { getTenant, loadFleet, loadTenants, tenantDir } from './store.js';
-import type { ChannelId } from './types.js';
+import type { ChannelId, Tier } from './types.js';
 
 function parseArgs(argv: string[]): { positional: string[]; flags: Map<string, string | true> } {
   const positional: string[] = [];
@@ -45,8 +57,11 @@ const HELP = `managed-openclaw — control plane for a fleet of managed OpenClaw
 Usage: npm run cli -- <command> [args]
 
   signup --name <name> [--id <id>] [--phone +1555...] [--email a@b.com]
-         [--channel whatsapp|telegram|signal] [--enable email,sms] [--no-start]
+         [--channel whatsapp|telegram|signal] [--enable email,sms]
+         [--tier container|desktop] [--no-start]
                                 Provision a new person's managed assistant
+                                (desktop tier also gets a residential exit node
+                                from the egress pool, least-loaded)
   list                          All tenants, one line each
   show <tenant>                 Tenant detail incl. nudge history
   enable <tenant> <capability>  Switch a capability on (re-renders + restarts)
@@ -66,6 +81,18 @@ Usage: npm run cli -- <command> [args]
                                 ...and delete all stored data incl. contact
                                 info (deletion-request path; irreversible)
   status                        Fleet + per-tenant container status
+  seed <tenant> [--authkey tskey-...] [--claude-token <tok> | --claude-token-file <path>]
+                                Render the desktop-tier VM's first-boot NoCloud
+                                seed (tailnet join + exit node + Claude token);
+                                authkey falls back to MOC_TS_AUTHKEY
+  egress nodes                  Residential exit-node pool, assignments, status
+  egress add-node <name> [--ip <expected-egress-ip>] [--location <note>]
+  egress remove-node <name>
+  egress assign <tenant> <node> Record an assignment (applies at next seed)
+  egress migrate --to <node> (--tenant <id> | --from <node>) [--dry-run]
+                                Live-move VM egress (tailscale set over SSH)
+  egress check                  Exit nodes online + egress IPs as expected
+                                (cron this; exits non-zero on problems)
   serve [--port 8787]           Start the HTTP control-plane API
 
 Capabilities: ${CAPABILITIES.map((c) => c.id).join(', ')}
@@ -82,6 +109,10 @@ async function main(): Promise<void> {
       const name = str(flags, 'name');
       if (!name) throw new Error('signup requires --name');
       const enable = (str(flags, 'enable') ?? '').split(',').map((s) => s.trim()).filter(isCapabilityId);
+      const tier = str(flags, 'tier');
+      if (tier && tier !== 'container' && tier !== 'desktop') {
+        throw new Error(`--tier must be container or desktop, got: ${tier}`);
+      }
       const result = signup(
         {
           name,
@@ -89,10 +120,14 @@ async function main(): Promise<void> {
           phone: str(flags, 'phone'),
           email: str(flags, 'email'),
           channel: str(flags, 'channel') as ChannelId | undefined,
+          tier: tier as Tier | undefined,
           enable,
         },
         { start },
       );
+      if (result.tenant.egress) {
+        console.log(`  egress: via ${result.tenant.egress.exitNode} (render the VM seed: npm run cli -- seed ${result.tenant.id})`);
+      }
       console.log(`Signed up "${name}" as tenant ${result.tenant.id} (port ${result.tenant.gatewayPort})`);
       reportApply(result);
       break;
@@ -101,7 +136,7 @@ async function main(): Promise<void> {
       for (const t of loadTenants()) {
         const s = summarize(t);
         const caps = Object.entries(s.capabilities).filter(([, on]) => on).map(([id]) => id).join(',');
-        console.log(`${s.id}\t${s.channel}\tport ${s.gatewayPort}\t[${caps}]\t${s.container}${s.upToDate ? '' : '\t(update pending)'}${s.offboarded ? '\t(offboarded)' : ''}`);
+        console.log(`${s.id}\t${s.channel}\tport ${s.gatewayPort}\t[${caps}]\t${s.container}${s.egress ? `\tvia ${s.egress}` : ''}${s.upToDate ? '' : '\t(update pending)'}${s.offboarded ? '\t(offboarded)' : ''}`);
       }
       break;
     }
@@ -175,6 +210,124 @@ async function main(): Promise<void> {
       for (const t of loadTenants()) {
         const s = summarize(t);
         console.log(`  ${s.id}: ${s.container}${s.upToDate ? '' : ' (update pending)'}`);
+      }
+      break;
+    }
+    case 'seed': {
+      const tenantId = positional[0];
+      if (!tenantId) throw new Error('Usage: seed <tenant> [--authkey tskey-...] [--claude-token <tok> | --claude-token-file <path>]');
+      const authkey = str(flags, 'authkey') ?? process.env.MOC_TS_AUTHKEY;
+      if (!authkey) {
+        throw new Error(
+          'seed needs a tailscale pre-auth key: --authkey tskey-... or MOC_TS_AUTHKEY. ' +
+            'Create one in the tailscale admin console, tagged for your tenant VMs (see README egress section).',
+        );
+      }
+      const tokenFile = str(flags, 'claude-token-file');
+      const claudeToken = tokenFile ? readFileSync(tokenFile, 'utf8').trim() : str(flags, 'claude-token');
+      const result = renderSeed(getTenant(tenantId), { authkey, claudeToken });
+      console.log(`Rendered first-boot seed for ${tenantId}`);
+      console.log(`  hostname: ${result.hostname}`);
+      console.log(`  egress: ${result.exitNode ? `via ${result.exitNode}` : 'no exit node (pool empty — egress add-node first if you want residential egress)'}`);
+      console.log(`  claude token: ${claudeToken ? 'included' : 'not included'}`);
+      console.log(`  seed dir: ${result.dir}`);
+      if (result.isoPath) console.log(`  seed iso: ${result.isoPath} — attach as a CD-ROM to a fresh base-image overlay and boot`);
+      else console.log(`  no ISO tool found — run inside the seed dir: ${result.isoCommand}`);
+      console.log('  the seed holds the auth key — delete it once the VM has joined the tailnet');
+      break;
+    }
+    case 'egress': {
+      const sub = positional[0];
+      switch (sub) {
+        case 'nodes': {
+          const fleet = loadFleet();
+          const pool = exitNodePool(fleet);
+          if (!pool.length) {
+            console.log('No exit nodes configured. Add one: npm run cli -- egress add-node server2 --ip <home-ip>');
+            break;
+          }
+          const counts = assignmentCounts(fleet, loadTenants());
+          const online = tailscaleOnline();
+          console.log(`tenant tag: ${tenantTag(fleet)}`);
+          for (const node of pool) {
+            const live = online ? (online.get(node.name.toLowerCase()) === undefined ? 'not in tailnet' : online.get(node.name.toLowerCase()) ? 'online' : 'OFFLINE') : 'unknown (no tailscale CLI here)';
+            console.log(`  ${node.name}\t${counts.get(node.name)} tenant(s)\t${live}${node.expectedIp ? `\tip ${node.expectedIp}` : ''}${node.location ? `\t${node.location}` : ''}`);
+          }
+          break;
+        }
+        case 'add-node': {
+          const name = positional[1];
+          if (!name) throw new Error('Usage: egress add-node <name> [--ip <expected-egress-ip>] [--location <note>]');
+          const node = addExitNode(name, { expectedIp: str(flags, 'ip'), location: str(flags, 'location') });
+          console.log(`Exit node ${node.name} saved${node.expectedIp ? ` (expected egress IP ${node.expectedIp})` : ''}. New desktop signups shard across the pool.`);
+          break;
+        }
+        case 'remove-node': {
+          const name = positional[1];
+          if (!name) throw new Error('Usage: egress remove-node <name>');
+          removeExitNode(name);
+          console.log(`Exit node ${name} removed from the pool.`);
+          break;
+        }
+        case 'assign': {
+          const [, tenantId, node] = positional;
+          if (!tenantId || !node) throw new Error('Usage: egress assign <tenant> <node>');
+          const tenant = assignEgress(tenantId, node);
+          console.log(`${tenantId} assigned to ${node} (recorded).`);
+          if ((tenant.tier ?? 'container') !== 'desktop') {
+            console.log('  note: container-tier egress is host-level; this takes effect only if the tenant moves to the desktop tier');
+          } else {
+            console.log(`  applies at the next seed render; for a live VM run: npm run cli -- egress migrate --tenant ${tenantId} --to ${node}`);
+          }
+          break;
+        }
+        case 'migrate': {
+          const to = str(flags, 'to');
+          if (!to) throw new Error('Usage: egress migrate --to <node> (--tenant <id> | --from <node>) [--dry-run]');
+          const results = migrateEgress({
+            tenantId: str(flags, 'tenant'),
+            from: str(flags, 'from'),
+            to,
+            dryRun: flags.has('dry-run'),
+          });
+          if (!results.length) console.log('Nothing to migrate.');
+          for (const r of results) console.log(`  ${r.ok ? 'ok' : 'FAILED'}\t${r.tenant}\t${r.detail}`);
+          if (results.some((r) => !r.ok)) process.exitCode = 1;
+          break;
+        }
+        case 'check': {
+          const result = checkEgress();
+          if (!result.nodes.length) {
+            console.log('No exit nodes configured — nothing to check.');
+            break;
+          }
+          if (!result.tailscaleAvailable) {
+            console.log('note: no tailscale CLI on this host — skipping tailnet online checks, probing via tenant VMs only');
+          }
+          for (const n of result.nodes) {
+            const bits = [
+              `${n.assigned} tenant(s)`,
+              n.online === undefined ? (result.tailscaleAvailable ? 'not in tailnet' : 'online: unknown') : n.online ? 'online' : 'OFFLINE',
+              n.observedIp ? `egress ip ${n.observedIp} (via ${n.probeTenant})${n.ipMatch === false ? ' MISMATCH' : ''}` : 'no probe',
+            ];
+            console.log(`  ${n.node.name}\t${bits.join('\t')}`);
+          }
+          if (result.problems.length) {
+            console.error('PROBLEMS:');
+            for (const p of result.problems) console.error(`  - ${p}`);
+            const down = result.nodes.filter((n) => n.errors.length && n.assigned > 0);
+            const up = result.nodes.filter((n) => !n.errors.length);
+            if (down.length && up.length) {
+              console.error(`Failover is deliberate — when you're sure, run: npm run cli -- egress migrate --from ${down[0].node.name} --to ${up[0].node.name}`);
+            }
+            process.exitCode = 1;
+          } else {
+            console.log('All egress healthy.');
+          }
+          break;
+        }
+        default:
+          throw new Error('Usage: egress <nodes|add-node|remove-node|assign|migrate|check>');
       }
       break;
     }

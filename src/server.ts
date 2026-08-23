@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import { z } from 'zod';
 import { isCapabilityId } from './capabilities/registry.js';
+import { assignmentCounts, exitNodePool, tenantTag } from './egress.js';
 import { offboardTenant, runNudgesAll, setCapability, signup, summarize, updateFleet } from './ops.js';
 import { getTenant, loadFleet, loadTenants } from './store.js';
 
@@ -23,6 +24,15 @@ export async function startServer(port: number): Promise<void> {
   });
 
   app.get('/fleet', async () => ({ fleet: loadFleet(), tenants: loadTenants().length }));
+
+  app.get('/egress', async () => {
+    const fleet = loadFleet();
+    const counts = assignmentCounts(fleet, loadTenants());
+    return {
+      tenantTag: tenantTag(fleet),
+      exitNodes: exitNodePool(fleet).map((n) => ({ ...n, assigned: counts.get(n.name) ?? 0 })),
+    };
+  });
 
   app.get('/tenants', async () => loadTenants().map(summarize));
 

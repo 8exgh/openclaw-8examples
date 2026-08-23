@@ -11,7 +11,9 @@ systemctl enable tailscaled
 install -d -m 0700 /etc/openclaw
 
 # First-boot join. Seed file holds `tailscale up` arguments, e.g.:
-#   --authkey=tskey-... --advertise-tags=tag:dc-egress --hostname=openclaw-jason --exit-node=100.x.y.z
+#   --authkey=tskey-... --advertise-tags=tag:dc-egress --hostname=openclaw-jason --operator=openclaw --exit-node=server2
+# (This is what the control plane's `cli seed <tenant>` writes; --operator lets
+# it run `tailscale set` over SSH without sudo for egress migrations.)
 # The seed is shredded after a successful join so the auth key never lingers.
 cat > /usr/local/lib/openclaw-tailscale-up.sh <<'EOF'
 #!/usr/bin/env bash

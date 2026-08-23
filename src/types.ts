@@ -40,6 +40,28 @@ export interface OpenAIAuth {
 
 export type Tier = 'container' | 'desktop';
 
+export interface ExitNode {
+  /** Tailscale machine name (e.g. "server2") — used verbatim as --exit-node. */
+  name: string;
+  /** Expected public egress IP; `egress check` flags drift when set. */
+  expectedIp?: string;
+  /** Operator note: where the box lives / whose ISP it rides. */
+  location?: string;
+}
+
+export interface FleetEgress {
+  /** Residential exit nodes desktop-tier tenant VMs are sharded across. */
+  exitNodes: ExitNode[];
+  /** Tailnet tag tenant VMs advertise; the ACL must let it use exit nodes. */
+  tenantTag?: string;
+}
+
+export interface TenantEgress {
+  /** Exit-node name (from the fleet pool) this tenant's VM egresses through. */
+  exitNode: string;
+  assignedAt: string;
+}
+
 export interface Tenant {
   id: string;
   name: string;
@@ -60,6 +82,8 @@ export interface Tenant {
   applied?: AppliedRelease;
   /** Set when the tenant is offboarded; excluded from rollouts and nudging. */
   offboardedAt?: string;
+  /** Residential egress assignment (desktop tier; consumed by the VM seed). */
+  egress?: TenantEgress;
   /** ChatGPT / OpenAI Codex OAuth profile applied by the operator. */
   openaiAuth?: OpenAIAuth;
 }
@@ -75,4 +99,6 @@ export interface Fleet {
   nextPort: number;
   /** Ports reclaimed from offboarded tenants, reused before nextPort advances. */
   freePorts?: number[];
+  /** Residential exit-node pool + tailnet settings for tenant VM egress. */
+  egress?: FleetEgress;
 }

@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { CAPABILITIES, capability } from './capabilities/registry.js';
+import { pickExitNode } from './egress.js';
 import { deliverToWorkspace, pickNudge } from './nudges/engine.js';
 import { dockerAvailable, pullImage, resolveDigest } from './provisioner/docker.js';
 import { getProvisioner } from './provisioner/index.js';
@@ -81,6 +82,13 @@ export function signup(input: SignupInput, opts: { start?: boolean } = {}): Appl
     nudgeLog: [],
   };
   saveFleet(fleet);
+
+  // Sticky residential egress for VM tenants: least-loaded exit node at
+  // signup, then never moved implicitly (see src/egress.ts).
+  if (tenant.tier === 'desktop') {
+    const exitNode = pickExitNode(fleet, loadTenants());
+    if (exitNode) tenant.egress = { exitNode, assignedAt: now };
+  }
 
   for (const def of CAPABILITIES) {
     const enable = def.defaultEnabled || (input.enable ?? []).includes(def.id);
@@ -310,6 +318,8 @@ export interface TenantSummary {
   tier: Tier;
   gatewayPort: number;
   container: string;
+  /** Exit node the tenant's VM egresses through (desktop tier). */
+  egress?: string;
   capabilities: Record<string, boolean>;
   managedVersion?: string;
   upToDate: boolean;
@@ -326,6 +336,7 @@ export function summarize(tenant: Tenant): TenantSummary {
     tier: tenant.tier ?? 'container',
     gatewayPort: tenant.gatewayPort,
     container: getProvisioner(tenant.tier).status(tenant),
+    egress: tenant.egress?.exitNode,
     capabilities: Object.fromEntries(
       Object.entries(tenant.capabilities).map(([id, s]) => [id, !!s?.enabled]),
     ),

@@ -94,6 +94,63 @@ the templates + code version, so `list`/`status` show exactly who is behind
 (`update pending`). New signups always provision on the current release. Run it
 from cron for continuous updates.
 
+## Residential egress (exit-node pool)
+
+Desktop-tier tenant VMs join the tailnet at first boot and route **all** traffic
+through a residential tailscale exit node, so tenants never present a
+datacenter IP to WhatsApp/Google/etc. Design choices, deliberately:
+
+- **Sticky, sharded, per-tenant.** A tailscale client uses exactly one exit
+  node at a time, and messaging platforms treat IP flapping as an account-risk
+  signal — so there is no per-connection load balancing. Instead each desktop
+  signup takes the least-loaded node from the pool and keeps it. Sharding also
+  spreads accounts across residential IPs (many accounts on one IP is itself a
+  ban signal).
+- **Fail closed.** If a tenant's exit node goes down, that tenant's traffic
+  blackholes rather than leaking the datacenter IP. `egress check` is the alarm.
+- **Failover is a decision, not a reflex.** `egress check` alerts; a human runs
+  `egress migrate`. Moving a tenant changes its public IP — do it knowingly,
+  and move tenants back deliberately after recovery.
+
+Per exit node (a Pi at a residence works; needs a **distinct ISP connection**
+to add real IP diversity):
+
+```bash
+echo -e 'net.ipv4.ip_forward=1\nnet.ipv6.conf.all.forwarding=1' | sudo tee /etc/sysctl.d/99-tailscale.conf
+sudo sysctl -p /etc/sysctl.d/99-tailscale.conf
+sudo tailscale up --advertise-exit-node --hostname=server2 --advertise-tags=tag:residential-exit
+tailscale set --auto-update
+```
+
+And in the tailnet policy file:
+
+```jsonc
+"tagOwners": {
+  "tag:residential-exit": ["autogroup:admin"],
+  "tag:dc-egress":        ["autogroup:admin"]   // tenant VMs
+},
+"autoApprovers": { "exitNode": ["tag:residential-exit"] },
+"acls": [{ "action": "accept", "src": ["tag:dc-egress"], "dst": ["autogroup:internet:*"] }]
+```
+
+Then, on the control plane:
+
+```bash
+npm run cli -- egress add-node server2 --ip <that-home's-public-ip> --location "parents' place"
+npm run cli -- signup --name "Ana" --tier desktop        # gets the least-loaded node, sticky
+MOC_TS_AUTHKEY=tskey-... npm run cli -- seed ana-reyes   # first-boot NoCloud seed (join + exit node)
+npm run cli -- egress nodes                              # pool, assignments, online state
+npm run cli -- egress check                              # cron this; non-zero exit on problems
+npm run cli -- egress migrate --from server1 --to server2  # deliberate failover/rebalance
+```
+
+The seed's pre-auth key should be tagged `tag:dc-egress`. `egress migrate` and
+the `egress check` probe reach VMs as `openclaw@openclaw-<tenant>` over the
+tailnet (key-based SSH; the seed passes `--operator=openclaw` so no sudo is
+needed for `tailscale set`). Expect a Pi 4-class node to top out around
+150–300 Mbps of WireGuard — the real ceiling is usually the home connection's
+**upload** bandwidth.
+
 ## What's managed vs. owned per tenant
 
 | Path in `tenants/<id>/` | On re-render/update |
@@ -149,6 +206,7 @@ from cron for continuous updates.
 ```cron
 0 * * * *  cd /path/to/repo && npm run cli -- nudge      # hourly nudge pass
 0 5 * * *  cd /path/to/repo && npm run cli -- update --canary <your-own-tenant>
+15 * * * * cd /path/to/repo && npm run cli -- egress check  # exit nodes up + IPs right (fails loud)
 ```
 
 Run your own instance as tenant zero and let it eat the bad releases: with
