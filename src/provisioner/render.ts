@@ -382,14 +382,19 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     ? parseEnv(readFileSync(envFile, 'utf8')).get('TELEGRAM_BOT_TOKEN')
     : undefined;
   const channelReady = !!existingToken && existingToken !== 'changeme';
-  const existingMoonshotKey = existsSync(envFile)
-    ? parseEnv(readFileSync(envFile, 'utf8')).get('MOONSHOT_API_KEY')
-    : undefined;
-  const moonshotSearchReady = !!existingMoonshotKey && existingMoonshotKey !== 'changeme';
-  const existingBraveKey = existsSync(envFile)
-    ? parseEnv(readFileSync(envFile, 'utf8')).get('BRAVE_API_KEY')
-    : undefined;
-  const braveSearchReady = !!existingBraveKey && existingBraveKey !== 'changeme';
+  // Search credentials: usable if the tenant's .env already holds a real one,
+  // OR if the control plane is carrying one — renderEnv() writes that into the
+  // .env later in this same pass, so treating it as absent here would leave the
+  // config a whole deploy behind the credential.
+  const searchKeyReady = (key: string): boolean => {
+    const existing = existsSync(envFile)
+      ? parseEnv(readFileSync(envFile, 'utf8')).get(key)
+      : undefined;
+    if (existing && existing !== 'changeme') return true;
+    return !!process.env[key];
+  };
+  const moonshotSearchReady = searchKeyReady('MOONSHOT_API_KEY');
+  const braveSearchReady = searchKeyReady('BRAVE_API_KEY');
 
   // OpenClaw writes config provenance metadata and restores its last-known-good
   // backup during shutdown when that metadata suddenly disappears. Preserve it
