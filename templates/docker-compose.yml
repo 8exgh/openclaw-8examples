@@ -7,6 +7,15 @@ services:
     restart: unless-stopped
     init: true
     env_file: .env
+    # Explicit resolvers. The host runs systemd-resolved, so its
+    # /etc/resolv.conf points at the 127.0.0.53 stub — inside a container that
+    # is the container's OWN loopback, where nothing listens, and every model
+    # API lookup dies with EAI_AGAIN. Containers recreated while the host was
+    # in that state lost all DNS (and with it every LLM provider), so pin
+    # resolvers here rather than inherit whatever the host happens to have.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       # Real headful Chromium on a virtual display — full rendering, not
       # headless. Xvfb is started by the command below; the browser attaches
