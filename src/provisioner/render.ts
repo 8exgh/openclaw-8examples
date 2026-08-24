@@ -200,14 +200,20 @@ export function buildOpenclawConfig(
     },
     // web_search picks a provider by sniffing the environment for API keys,
     // and KIMI_API_KEY alone is enough to make it choose Kimi — which then
-    // 401s, because that key is a Kimi Coding membership key and Kimi search
-    // calls api.moonshot.ai. Key-free providers (DuckDuckGo) are never
-    // auto-detected, so an unpinned tenant ends up with search that is present
-    // but broken. Always pin it: Kimi when a real Moonshot platform key is
-    // installed, otherwise DuckDuckGo so search works with no credential.
+    // 401s, because that key is a Kimi Coding membership key while Kimi search
+    // calls api.moonshot.ai. Key-free providers are never auto-detected
+    // (requiresCredential: false ends the scan), so an unpinned tenant gets
+    // search that is present but permanently failing. Always pin it.
     tools: {
       web: {
-        search: { provider: opts.moonshotSearchReady ? 'kimi' : 'duckduckgo' },
+        search: opts.moonshotSearchReady
+          ? { enabled: true, provider: 'kimi' }
+          : // Nothing usable: turn web_search off rather than leave a provider
+            // that cannot answer. DuckDuckGo needs no key but is blackholed
+            // from the fleet's egress (connect timeouts), and a tool that
+            // hangs for 20s is worse than one the agent knows it lacks.
+            // Install a Moonshot PLATFORM key (or BRAVE_API_KEY) to switch on.
+            { enabled: false },
       },
     },
     models: {
