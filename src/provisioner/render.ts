@@ -131,7 +131,7 @@ function channelConfig(tenant: Tenant, opts: { channelReady: boolean }): Record<
 /** Build the tenant's openclaw.json: managed base + every enabled capability's patch. */
 export function buildOpenclawConfig(
   tenant: Tenant,
-  opts: { channelReady?: boolean; moonshotSearchReady?: boolean } = {},
+  opts: { channelReady?: boolean; moonshotSearchReady?: boolean; braveSearchReady?: boolean } = {},
 ): Record<string, unknown> {
   let config: Record<string, unknown> = {
     gateway: {
@@ -206,14 +206,21 @@ export function buildOpenclawConfig(
     // search that is present but permanently failing. Always pin it.
     tools: {
       web: {
-        search: opts.moonshotSearchReady
-          ? { enabled: true, provider: 'kimi' }
-          : // Nothing usable: turn web_search off rather than leave a provider
-            // that cannot answer. DuckDuckGo needs no key but is blackholed
-            // from the fleet's egress (connect timeouts), and a tool that
-            // hangs for 20s is worse than one the agent knows it lacks.
-            // Install a Moonshot PLATFORM key (or BRAVE_API_KEY) to switch on.
-            { enabled: false },
+        // Brave first: ranked results with snippets suit an agent better than
+        // one synthesized paragraph, and its free tier costs nothing. Kimi is
+        // the alternative when a Moonshot PLATFORM key is installed (the Kimi
+        // Coding subscription cannot do search — its endpoint rejects the
+        // $web_search builtin, and its key 401s on the platform api).
+        search: opts.braveSearchReady
+          ? { enabled: true, provider: 'brave' }
+          : opts.moonshotSearchReady
+            ? { enabled: true, provider: 'kimi' }
+            : // Nothing usable: turn web_search off rather than leave a
+              // provider that cannot answer. DuckDuckGo needs no key but is
+              // blackholed from the fleet's egress (connect timeouts), and a
+              // tool that hangs for 20s is worse than one the agent knows it
+              // lacks. Set BRAVE_API_KEY (or MOONSHOT_API_KEY) to switch on.
+              { enabled: false },
       },
     },
     models: {
@@ -300,6 +307,11 @@ function renderEnv(tenant: Tenant, dir: string): string[] {
   if (process.env.MOONSHOT_API_KEY) {
     ensure('MOONSHOT_API_KEY', process.env.MOONSHOT_API_KEY);
   }
+  // Optional: Brave Search API key (free tier) — the preferred web_search
+  // credential. Set it on the control plane and every tenant inherits it.
+  if (process.env.BRAVE_API_KEY) {
+    ensure('BRAVE_API_KEY', process.env.BRAVE_API_KEY);
+  }
   if (tenant.channel === 'telegram') ensure('TELEGRAM_BOT_TOKEN', 'changeme');
   for (const [id, state] of Object.entries(tenant.capabilities)) {
     if (!state?.enabled) continue;
@@ -374,6 +386,10 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     ? parseEnv(readFileSync(envFile, 'utf8')).get('MOONSHOT_API_KEY')
     : undefined;
   const moonshotSearchReady = !!existingMoonshotKey && existingMoonshotKey !== 'changeme';
+  const existingBraveKey = existsSync(envFile)
+    ? parseEnv(readFileSync(envFile, 'utf8')).get('BRAVE_API_KEY')
+    : undefined;
+  const braveSearchReady = !!existingBraveKey && existingBraveKey !== 'changeme';
 
   // OpenClaw writes config provenance metadata and restores its last-known-good
   // backup during shutdown when that metadata suddenly disappears. Preserve it
@@ -388,7 +404,7 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
       /* A malformed config will be replaced by the managed render below. */
     }
   }
-  const renderedConfig = buildOpenclawConfig(tenant, { channelReady, moonshotSearchReady });
+  const renderedConfig = buildOpenclawConfig(tenant, { channelReady, moonshotSearchReady, braveSearchReady });
   if (existingMeta !== undefined) renderedConfig.meta = existingMeta;
 
   writeFileSync(
