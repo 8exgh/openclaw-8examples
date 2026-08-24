@@ -131,7 +131,7 @@ function channelConfig(tenant: Tenant, opts: { channelReady: boolean }): Record<
 /** Build the tenant's openclaw.json: managed base + every enabled capability's patch. */
 export function buildOpenclawConfig(
   tenant: Tenant,
-  opts: { channelReady?: boolean } = {},
+  opts: { channelReady?: boolean; moonshotSearchReady?: boolean } = {},
 ): Record<string, unknown> {
   let config: Record<string, unknown> = {
     gateway: {
@@ -179,6 +179,35 @@ export function buildOpenclawConfig(
     plugins: {
       entries: {
         kimi: { enabled: true },
+        // Kimi web_search talks to Moonshot's PLATFORM api, which takes a
+        // different credential than the Kimi Coding membership key the chat
+        // models use — hence its own env var.
+        ...(opts.moonshotSearchReady
+          ? {
+              moonshot: {
+                enabled: true,
+                config: {
+                  webSearch: {
+                    apiKey: '${MOONSHOT_API_KEY}',
+                    baseUrl: 'https://api.moonshot.ai/v1',
+                    model: 'kimi-k2.6',
+                  },
+                },
+              },
+            }
+          : {}),
+      },
+    },
+    // web_search picks a provider by sniffing the environment for API keys,
+    // and KIMI_API_KEY alone is enough to make it choose Kimi — which then
+    // 401s, because that key is a Kimi Coding membership key and Kimi search
+    // calls api.moonshot.ai. Key-free providers (DuckDuckGo) are never
+    // auto-detected, so an unpinned tenant ends up with search that is present
+    // but broken. Always pin it: Kimi when a real Moonshot platform key is
+    // installed, otherwise DuckDuckGo so search works with no credential.
+    tools: {
+      web: {
+        search: { provider: opts.moonshotSearchReady ? 'kimi' : 'duckduckgo' },
       },
     },
     models: {
@@ -259,6 +288,12 @@ function renderEnv(tenant: Tenant, dir: string): string[] {
   if (process.env.OPENCLAW_TELEMETRY_TOKEN) {
     ensure('OPENCLAW_TELEMETRY_TOKEN', process.env.OPENCLAW_TELEMETRY_TOKEN);
   }
+  // Optional: Moonshot PLATFORM key (platform.moonshot.ai), which is what Kimi
+  // web_search needs — not the Kimi Coding membership key in KIMI_API_KEY.
+  // Absent, tenants fall back to key-free DuckDuckGo search.
+  if (process.env.MOONSHOT_API_KEY) {
+    ensure('MOONSHOT_API_KEY', process.env.MOONSHOT_API_KEY);
+  }
   if (tenant.channel === 'telegram') ensure('TELEGRAM_BOT_TOKEN', 'changeme');
   for (const [id, state] of Object.entries(tenant.capabilities)) {
     if (!state?.enabled) continue;
@@ -329,6 +364,10 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     ? parseEnv(readFileSync(envFile, 'utf8')).get('TELEGRAM_BOT_TOKEN')
     : undefined;
   const channelReady = !!existingToken && existingToken !== 'changeme';
+  const existingMoonshotKey = existsSync(envFile)
+    ? parseEnv(readFileSync(envFile, 'utf8')).get('MOONSHOT_API_KEY')
+    : undefined;
+  const moonshotSearchReady = !!existingMoonshotKey && existingMoonshotKey !== 'changeme';
 
   // OpenClaw writes config provenance metadata and restores its last-known-good
   // backup during shutdown when that metadata suddenly disappears. Preserve it
@@ -343,7 +382,7 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
       /* A malformed config will be replaced by the managed render below. */
     }
   }
-  const renderedConfig = buildOpenclawConfig(tenant, { channelReady });
+  const renderedConfig = buildOpenclawConfig(tenant, { channelReady, moonshotSearchReady });
   if (existingMeta !== undefined) renderedConfig.meta = existingMeta;
 
   writeFileSync(
