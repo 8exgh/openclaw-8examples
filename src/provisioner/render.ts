@@ -182,6 +182,10 @@ export function buildOpenclawConfig(
         // Kimi web_search talks to Moonshot's PLATFORM api, which takes a
         // different credential than the Kimi Coding membership key the chat
         // models use — hence its own env var.
+        // A pinned provider whose plugin is not enabled makes the gateway
+        // REFUSE TO BOOT (exit 78, crash loop) — never pin one without
+        // enabling it here.
+        ...(opts.braveSearchReady ? { brave: { enabled: true } } : {}),
         ...(opts.moonshotSearchReady
           ? {
               moonshot: {
