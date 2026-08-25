@@ -1,6 +1,37 @@
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { tenantDir } from '../store.js';
 import type { Fleet, Tenant, Tier } from '../types.js';
 import { composeDown, composeUp, containerStatus, dockerAvailable } from './docker.js';
 import { renderTenant } from './render.js';
+
+/**
+ * Plugins the image does not bundle. Enabling one in config without
+ * installing it leaves the gateway warning "plugin not installed" and
+ * silently ignoring whatever it powers — which is how web_search sat inert
+ * fleet-wide, and how a fresh tenant would come up with no Kimi fallback.
+ */
+const EXTERNAL_PLUGIN_PACKAGES: Record<string, string> = {
+  brave: '@openclaw/brave-plugin',
+  kimi: '@openclaw/kimi-provider',
+  moonshot: '@openclaw/moonshot-provider',
+};
+
+/** Read back what the render actually enabled, rather than re-deriving it. */
+function requiredPluginPackages(tenant: Tenant): string[] {
+  const file = path.join(tenantDir(tenant.id), 'config', 'openclaw.json');
+  if (!existsSync(file)) return [];
+  try {
+    const config = JSON.parse(readFileSync(file, 'utf8')) as {
+      plugins?: { entries?: Record<string, { enabled?: boolean }> };
+    };
+    return Object.entries(config.plugins?.entries ?? {})
+      .filter(([id, entry]) => entry?.enabled && EXTERNAL_PLUGIN_PACKAGES[id])
+      .map(([id]) => EXTERNAL_PLUGIN_PACKAGES[id]);
+  } catch {
+    return [];
+  }
+}
 
 export interface ApplyOutcome {
   started: boolean;
@@ -19,7 +50,7 @@ const containerProvisioner: Provisioner = {
     const missingEnv = renderTenant(tenant, fleet);
     let started = false;
     if (start && dockerAvailable()) {
-      composeUp(tenant);
+      composeUp(tenant, requiredPluginPackages(tenant));
       started = true;
     }
     return { started, missingEnv };
