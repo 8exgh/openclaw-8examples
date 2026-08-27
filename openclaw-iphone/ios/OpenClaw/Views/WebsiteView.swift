@@ -63,6 +63,10 @@ struct WebsiteView: View {
                 }
             }
             .frame(maxHeight: 360)
+            .mask(
+                LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.9), .init(color: .clear, location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            )
 
             Divider()
             ConversationView(claw: claw, suggestions: ["Show me what my site looks like now", "What should I add next?"], draft: $draft)

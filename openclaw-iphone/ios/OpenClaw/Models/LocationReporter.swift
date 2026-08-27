@@ -20,7 +20,7 @@ final class LocationReporter: NSObject, CLLocationManagerDelegate {
     private var sending = false
 
     override init() {
-        authorization = manager.authorizationStatus
+        authorization = DemoMode.isActive ? .authorizedAlways : manager.authorizationStatus
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
@@ -86,6 +86,7 @@ final class LocationReporter: NSObject, CLLocationManagerDelegate {
     // MARK: CLLocationManagerDelegate
 
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if DemoMode.isActive { return }
         let status = manager.authorizationStatus
         Task { @MainActor in
             self.authorization = status

@@ -29,7 +29,12 @@ final class AppModel {
         let defaults = UserDefaults.standard
         let urlString = defaults.string(forKey: Self.serverKey) ?? AppConfig.defaultAPIBaseURL.absoluteString
         serverURLString = urlString
-        api = APIClient(baseURL: URL(string: urlString) ?? AppConfig.defaultAPIBaseURL, token: Keychain.string(for: Self.tokenKey))
+        if DemoMode.isActive {
+            // Screenshot mode: canned server, no Keychain, no prompts.
+            api = APIClient(baseURL: URL(string: "https://demo.invalid")!, token: "demo", protocolClasses: [DemoURLProtocol.self])
+        } else {
+            api = APIClient(baseURL: URL(string: urlString) ?? AppConfig.defaultAPIBaseURL, token: Keychain.string(for: Self.tokenKey))
+        }
         selectedClawId = defaults.string(forKey: Self.selectedClawKey)
     }
 
@@ -129,6 +134,7 @@ final class AppModel {
     }
 
     private func resumeLocationSharingIfOn() {
+        if DemoMode.isActive { return }
         if isSharingLocation, location.isAuthorized { startReporting() }
     }
 

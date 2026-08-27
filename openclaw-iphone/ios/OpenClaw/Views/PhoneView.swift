@@ -37,17 +37,20 @@ struct PhoneView: View {
             List {
                 Section("\(claw.displayName)'s number") {
                     if let number = claw.phoneNumber {
-                        HStack {
-                            Text(number).font(.title2.monospacedDigit()).bold()
-                            Spacer()
-                            Button {
-                                if let url = URL(string: "tel:\(number)") { openURL(url) }
-                            } label: { Label("Call", systemImage: "phone.fill") }
-                            .buttonStyle(.borderedProminent)
-                            Button {
-                                if let url = URL(string: "sms:\(number)") { openURL(url) }
-                            } label: { Label("Text", systemImage: "message.fill") }
-                            .buttonStyle(.bordered)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(claw.phoneNumberPretty ?? number)
+                                .font(.title2.monospacedDigit()).bold()
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                            HStack {
+                                Button {
+                                    if let url = URL(string: "tel:\(number)") { openURL(url) }
+                                } label: { Label("Call", systemImage: "phone.fill") }
+                                .buttonStyle(.borderedProminent)
+                                Button {
+                                    if let url = URL(string: "sms:\(number)") { openURL(url) }
+                                } label: { Label("Text", systemImage: "message.fill") }
+                                .buttonStyle(.bordered)
+                            }
                         }
                         Text("Save it in your contacts — you can call or text your claw like a person, and it answers.")
                             .font(.footnote).foregroundStyle(.secondary)
@@ -63,7 +66,11 @@ struct PhoneView: View {
                     }
                 }
             }
-            .frame(maxHeight: 380)
+            .frame(maxHeight: 420)
+            .mask(
+                LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.9), .init(color: .clear, location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            )
 
             Divider()
             ConversationView(claw: claw, suggestions: ["Check my texts", "Who called today?"], draft: $draft)

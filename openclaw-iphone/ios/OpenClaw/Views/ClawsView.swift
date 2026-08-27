@@ -3,9 +3,10 @@ import SwiftUI
 /// One conversation per claw.
 struct ClawsView: View {
     @Environment(AppModel.self) private var model
+    @State private var path: [ClawCard] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if model.claws.isEmpty {
                     EmptyClawsView()
@@ -38,6 +39,9 @@ struct ClawsView: View {
                 }
             }
             .refreshable { await model.refresh() }
+            .onChange(of: model.claws.count, initial: true) { _, _ in
+                if DemoMode.screen == "chat", path.isEmpty, let first = model.claws.first { path = [first] }
+            }
         }
     }
 }

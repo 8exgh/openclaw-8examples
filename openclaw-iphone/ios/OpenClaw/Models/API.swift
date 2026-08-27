@@ -16,6 +16,15 @@ struct ClawCard: Codable, Identifiable, Hashable {
     let telegramBotUsername: String?
     var id: String { clawId }
 
+    /// "+14035550142" → "+1 (403) 555-0142"; other countries stay E.164.
+    var phoneNumberPretty: String? {
+        guard let n = phoneNumber else { return nil }
+        let d = n.filter(\.isNumber)
+        guard n.hasPrefix("+1"), d.count == 11 else { return n }
+        let a = d.dropFirst().prefix(3), b = d.dropFirst(4).prefix(3), c = d.suffix(4)
+        return "+1 (\(a)) \(b)-\(c)"
+    }
+
     /// "openclaw7" → "Claw 7"
     var displayName: String {
         let digits = clawId.drop(while: { !$0.isNumber })
@@ -89,12 +98,13 @@ final class APIClient: @unchecked Sendable {
     var token: String?
     private let session: URLSession
 
-    init(baseURL: URL, token: String?) {
+    init(baseURL: URL, token: String?, protocolClasses: [AnyClass]? = nil) {
         self.baseURL = baseURL
         self.token = token
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.waitsForConnectivity = false
+        if let protocolClasses { config.protocolClasses = protocolClasses }
         session = URLSession(configuration: config)
     }
 

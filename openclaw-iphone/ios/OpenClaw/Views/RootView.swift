@@ -18,19 +18,25 @@ struct RootView: View {
 struct MainTabView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
+    @State private var tab: String = DemoMode.tab ?? "claws"
 
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             ClawsView()
                 .tabItem { Label("Claws", systemImage: "bubble.left.and.bubble.right") }
+                .tag("claws")
             LocationView()
                 .tabItem { Label("Location", systemImage: "location") }
+                .tag("location")
             WebsiteView()
                 .tabItem { Label("Website", systemImage: "globe") }
+                .tag("website")
             PhoneView()
                 .tabItem { Label("Phone", systemImage: "phone") }
+                .tag("phone")
             ConnectView()
                 .tabItem { Label("Connect", systemImage: "link") }
+                .tag("connect")
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await model.refresh() } }

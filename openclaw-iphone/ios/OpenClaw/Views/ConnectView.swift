@@ -3,15 +3,16 @@ import SwiftUI
 /// Other ways to reach your claw: a Telegram bot and the Alexa "My Claw" skill.
 struct ConnectView: View {
     @Environment(AppModel.self) private var model
+    @State private var path: [String] = ["alexa", "telegram"].contains(DemoMode.screen ?? "") ? [DemoMode.screen!] : []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 Section("Reach your claw from…") {
-                    NavigationLink { TelegramView() } label: {
+                    NavigationLink(value: "telegram") {
                         Label("Telegram", systemImage: "paperplane.fill")
                     }
-                    NavigationLink { AlexaView() } label: {
+                    NavigationLink(value: "alexa") {
                         Label("Amazon Alexa — “My Claw”", systemImage: "waveform.circle.fill")
                     }
                 }
@@ -25,6 +26,9 @@ struct ConnectView: View {
             }
             .navigationTitle("Connect")
             .toolbar { ClawPicker() }
+            .navigationDestination(for: String.self) { screen in
+                if screen == "alexa" { AlexaView() } else { TelegramView() }
+            }
         }
     }
 }
