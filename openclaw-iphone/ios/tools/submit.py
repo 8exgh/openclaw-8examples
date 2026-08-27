@@ -22,37 +22,37 @@ SCREENSHOT_DIR = os.path.join(IOS_DIR, "Screenshots", "iphone-6.9")
 SITE = "https://8examples.com"
 
 COPYRIGHT = "© 2026 8Examples"
-SUBTITLE = "Chat, calls and location"
-PROMO = ("Chat with your 8Examples AI assistant — OpenClaw or Hermes — share your location so it "
-         "can help with what's near you, and set up its phone, website, Telegram bot and Alexa skill.")
-KEYWORDS = "8examples,assistant,AI,openclaw,hermes,agent,chat,phone,website,telegram,alexa,business"  # ≤100 chars
+SUBTITLE = "Talk to your OpenClaw assistant"
+PROMO = ("Chat with your claw, share your location so it can help with what's near you, "
+         "and set up its phone number, website, Telegram bot and Alexa skill.")
+KEYWORDS = "openclaw,assistant,AI,claw,chat,phone,website,telegram,alexa,location,business,8examples"  # ≤100 chars
 WHATS_NEW = "First release."
-DESCRIPTION = """8Examples AI Assistant is the companion app for your managed AI worker from 8Examples — whether it is an OpenClaw or a Hermes assistant. It is the AI that answers your texts, makes your phone calls, keeps your website current and handles your paperwork.
+DESCRIPTION = """My Claw is the companion app for your managed OpenClaw assistant from 8Examples: the AI worker that answers your texts, makes your phone calls, keeps your website current and handles your paperwork.
 
-Sign in with the same username and password you use for your assistant's web chat at 8examples.com. If you have more than one assistant, they all show up.
+Sign in with the same username and password you use for your claw's web chat. If you have more than one claw, they all show up.
 
-CHAT WITH YOUR ASSISTANT
-One conversation per assistant, right in the app. Ask it to check your messages, book an appointment, draft a reply or change your website. Replies arrive in the same thread, and your assistant remembers what you talked about on the phone, on Telegram and on the web.
+CHAT WITH YOUR CLAW
+One conversation per claw, right in the app. Ask it to check your messages, book an appointment, draft a reply or change your website. Replies arrive in the same thread, and your claw remembers what you talked about on the phone, on Telegram and on the web.
 
 LET IT KNOW WHERE YOU ARE (OPTIONAL)
-Say yes and your phone shares its location with your assistant every five minutes, even in the background, so it can answer things like "what's open near me" or "text my ETA". Say no and it never asks again. Stop sharing at any time; the last position is forgotten.
+Say yes and your phone shares its location with your claw every five minutes, even in the background, so it can answer things like "what's open near me" or "text my ETA". Say no and it never asks again. Stop sharing at any time; the last position is forgotten.
 
 YOUR WEBSITE
-See your domain and your fusenv.com address, open the live site in Safari, and tell your assistant what to change in plain words. Edits go live within a couple of minutes.
+See your domain and your fusenv.com address, open the live site in Safari, and tell your claw what to change in plain words. Edits go live within a couple of minutes.
 
-YOUR ASSISTANT'S PHONE NUMBER
-Call or text your assistant like a person. Tips show you what to ask for: "check my SMS every 15 minutes", "phone the clinic and reserve the next appointment", "call me while I drive".
+YOUR CLAW'S PHONE NUMBER
+Call or text your claw like a person. Tips show you what to ask for: "check my SMS every 15 minutes", "phone the clinic and reserve the next appointment", "call me while I drive".
 
 TELEGRAM AND ALEXA
-Step-by-step instructions to give your assistant a Telegram bot, and to enable the Alexa skill so every Echo in the house can talk to it.
+Step-by-step instructions to give your claw a Telegram bot, and to enable the "My Claw" Alexa skill so every Echo in the house can talk to it.
 
-REQUIRES A MANAGED 8EXAMPLES SUBSCRIPTION
-The app only works with an assistant from 8examples.com/openclaw (OpenClaw) or the Hermes AI Worker offering. The app itself is free.
+REQUIRES A MANAGED OPENCLAW SUBSCRIPTION
+My Claw only works with an assistant from 8examples.com/openclaw. The app itself is free.
 
 PRIVACY
-Your location is stored only if you say yes, only the most recent position is kept, and only your own assistant can read it. Terms: 8examples.com/openclaw/terms. Privacy: 8examples.com/openclaw/privacy."""
+Your location is stored only if you say yes, only the most recent position is kept, and only your own claw can read it. Terms: 8examples.com/openclaw/terms. Privacy: 8examples.com/openclaw/privacy."""
 
-REVIEW_NOTES = """8Examples AI Assistant is the companion app for a paid, managed AI assistant sold at https://8examples.com/openclaw (the OpenClaw product) and as the Hermes AI Worker. Every customer gets one assistant running on our servers; this app lets them talk to it and configure it. There is nothing to buy in the app.
+REVIEW_NOTES = """My Claw is the companion app for a paid, managed AI assistant ("claw") sold at https://8examples.com/openclaw. Every customer gets one assistant running on our servers; this app lets them talk to it and configure it. There is nothing to buy in the app.
 
 DEMO ACCOUNT (a live assistant reserved for review):
     Username: openclaw1

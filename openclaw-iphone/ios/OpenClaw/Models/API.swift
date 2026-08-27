@@ -25,11 +25,10 @@ struct ClawCard: Codable, Identifiable, Hashable {
         return "+1 (\(a)) \(b)-\(c)"
     }
 
-    /// "openclaw7" → "OpenClaw 7", "hermes3" → "Hermes 3"
+    /// "openclaw7" → "Claw 7"
     var displayName: String {
         let digits = clawId.drop(while: { !$0.isNumber })
-        if digits.isEmpty { return clawId }
-        return clawId.hasPrefix("hermes") ? "Hermes \(digits)" : "OpenClaw \(digits)"
+        return digits.isEmpty ? clawId : "Claw \(digits)"
     }
 }
 

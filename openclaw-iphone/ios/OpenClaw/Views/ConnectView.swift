@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Other ways to reach your assistant: a Telegram bot and the Alexa "My Claw" skill.
+/// Other ways to reach your claw: a Telegram bot and the Alexa "My Claw" skill.
 struct ConnectView: View {
     @Environment(AppModel.self) private var model
     @State private var path: [String] = ["alexa", "telegram"].contains(DemoMode.screen ?? "") ? [DemoMode.screen!] : []
@@ -8,7 +8,7 @@ struct ConnectView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                Section("Reach your assistant from…") {
+                Section("Reach your claw from…") {
                     NavigationLink(value: "telegram") {
                         Label("Telegram", systemImage: "paperplane.fill")
                     }
@@ -55,17 +55,17 @@ struct TelegramView: View {
                 }
             }
 
-            Section("Set up a Telegram bot for your assistant") {
+            Section("Set up a Telegram bot for your claw") {
                 Step(1, "Install Telegram on this phone and sign in.")
                 Step(2, "In Telegram, search for **BotFather** (blue checkmark) and open it.")
                 Step(3, "Send **/newbot**. Give it a name (e.g. “Ana's Claw”) and a username ending in **bot** (e.g. `anas_claw_bot`).")
                 Step(4, "BotFather replies with a **token** like `123456:ABC-…`. Copy it.")
-                Step(5, "Come back to this app, open the **Assistants** tab and paste the token to your assistant: “here is my Telegram bot token: …”. It connects itself.")
-                Step(6, "In Telegram, open your new bot and press **Start**. Say hi — that's your assistant.")
+                Step(5, "Come back to this app, open the **Claws** tab and paste the token to your claw: “here is my Telegram bot token: …”. It connects itself.")
+                Step(6, "In Telegram, open your new bot and press **Start**. Say hi — that's your claw.")
             }
 
             Section("Good to know") {
-                Text("Only you can talk to your bot: your assistant remembers the first Telegram account that says hi and ignores strangers. Anything you tell it on Telegram, in this app, or on the phone is the same assistant with the same memory.")
+                Text("Only you can talk to your bot: your claw remembers the first Telegram account that says hi and ignores strangers. Anything you tell it on Telegram, in this app, or on the phone is the same claw with the same memory.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Button {
                     if let url = URL(string: "https://t.me/BotFather") { openURL(url) }
@@ -88,7 +88,7 @@ struct AlexaView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("“Alexa, ask My Claw what's on my calendar today.”")
                         .font(.headline)
-                    Text("The **My Claw** skill lives in the Alexa Skills store under **Productivity**. Enable it once, link it to this account, and every Echo in the house can talk to your assistant.")
+                    Text("The **My Claw** skill lives in the Alexa Skills store under **Productivity**. Enable it once, link it to this account, and every Echo in the house can talk to your claw.")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
@@ -107,14 +107,14 @@ struct AlexaView: View {
                 Step(2, "Tap **More → Skills & Games**, search **My Claw**, or browse **Categories → Productivity**.")
                 Step(3, "Tap **Enable to Use**.")
                 Step(4, "When asked to **Link Account**, sign in with the same username and password as this app (\(model.me?.username ?? "your openclaw login")).")
-                Step(5, "Done — the skill is now paired with your assistant\(model.claws.count > 1 ? "s" : "").")
+                Step(5, "Done — the skill is now paired with your claw\(model.claws.count > 1 ? "s" : "").")
             }
 
             Section("Ask for it on any Alexa device") {
                 Step(1, "Say **“Alexa, open My Claw.”** — then talk normally.")
                 Step(2, "Or in one breath: **“Alexa, ask My Claw to call the dentist and book a cleaning.”**")
                 Step(3, "**“Alexa, tell My Claw I'm leaving now.”** — handy with location sharing on.")
-                Step(4, "**“Alexa, ask My Claw what's new.”** — your assistant reads out anything waiting for you.")
+                Step(4, "**“Alexa, ask My Claw what's new.”** — your claw reads out anything waiting for you.")
             }
 
             Section("Troubleshooting") {

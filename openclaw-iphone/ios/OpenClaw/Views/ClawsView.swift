@@ -26,7 +26,7 @@ struct ClawsView: View {
                     }
                 }
             }
-            .navigationTitle("Your assistants")
+            .navigationTitle("Your claws")
             .navigationDestination(for: ClawCard.self) { claw in
                 ConversationView(claw: claw)
             }
