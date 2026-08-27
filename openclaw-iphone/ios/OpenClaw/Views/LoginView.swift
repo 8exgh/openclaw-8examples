@@ -12,12 +12,13 @@ struct LoginView: View {
             Form {
                 Section {
                     VStack(spacing: 8) {
-                        Image(systemName: "pawprint.circle.fill")
-                            .font(.system(size: 64))
+                        Image(systemName: "sparkles.rectangle.stack.fill")
+                            .font(.system(size: 60))
                             .foregroundStyle(.tint)
-                        Text("My Claw")
-                            .font(.largeTitle.bold())
-                        Text("Sign in with your claw’s username and password — the same ones you use at chat.8examples.com.")
+                        Text("8Examples AI Assistant")
+                            .font(.title.bold())
+                            .multilineTextAlignment(.center)
+                        Text("Sign in with your assistant’s username and password — the same ones you use at chat.8examples.com.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -27,7 +28,7 @@ struct LoginView: View {
                 }
 
                 Section {
-                    TextField("Username (e.g. openclaw7)", text: $username)
+                    TextField("Username (e.g. openclaw7 or hermes3)", text: $username)
                         .textContentType(.username)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()

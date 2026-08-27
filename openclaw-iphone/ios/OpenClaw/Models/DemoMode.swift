@@ -33,9 +33,12 @@ final class DemoURLProtocol: URLProtocol {
         switch path {
         case "/api/mobile/queries/me":
             return """
-            {"username":"openclaw7","claws":[{"clawId":"openclaw7","phoneNumber":"+14035550142",
-              "website":{"domain":"anasbakery.ca","fusenvSubdomain":"anas-bakery","url":"https://anasbakery.ca","fusenvUrl":"https://anas-bakery.fusenv.com"},
-              "telegramBotUsername":"anas_claw_bot"}]}
+            {"username":"openclaw7","claws":[
+              {"clawId":"openclaw7","phoneNumber":"+14035550142",
+               "website":{"domain":"anasbakery.ca","fusenvSubdomain":"anas-bakery","url":"https://anasbakery.ca","fusenvUrl":"https://anas-bakery.fusenv.com"},
+               "telegramBotUsername":"anas_claw_bot"},
+              {"clawId":"hermes3","phoneNumber":"+14035550188",
+               "website":null,"telegramBotUsername":null}]}
             """
         case "/api/mobile/queries/location-sharing":
             return """

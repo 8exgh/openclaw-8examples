@@ -25,7 +25,7 @@ struct PhoneView: View {
         return [
             "Check my SMS every 15 minutes and tell me about anything important.",
             "Phone 555-555-1234 and reserve the next available appointment for me.",
-            "Call \(number) while you drive — just talk to your claw hands-free.",
+            "Call \(number) while you drive — just talk to your assistant hands-free.",
             "Text me a reminder 30 minutes before every appointment tomorrow.",
             "Call the pharmacy and ask if my prescription is ready.",
             "If anyone texts you asking for me, reply that I'll get back to them today.",
@@ -52,7 +52,7 @@ struct PhoneView: View {
                                 .buttonStyle(.bordered)
                             }
                         }
-                        Text("Save it in your contacts — you can call or text your claw like a person, and it answers.")
+                        Text("Save it in your contacts — you can call or text your assistant like a person, and it answers.")
                             .font(.footnote).foregroundStyle(.secondary)
                     } else {
                         Text("No number yet. Ask \(claw.displayName) below: “register a phone number for yourself”.")
