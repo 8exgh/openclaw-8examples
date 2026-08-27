@@ -1,0 +1,12 @@
+# Runs on the fleet box next to the openclaw-* containers. The backend is
+# 8examples.com (src/app/api/mobile); this is only the relay worker.
+services:
+  background-processor:
+    build: ./background-processor
+    restart: unless-stopped
+    env_file: ./background-processor/.env
+    environment:
+      BACKEND_API_URL: https://8examples.com
+      CLAW_RUNNER: docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

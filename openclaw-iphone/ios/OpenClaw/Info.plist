@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>My Claw</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>OPENCLAW_API_BASE_URL</key>
+	<string>https://8examples.com</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>My Claw shares your location with your OpenClaw assistant(s) so they can help with things near you — only if you say yes.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>With “Always” access, My Claw can send your location to your OpenClaw assistant(s) every 5 minutes even while the app is closed. You can stop sharing any time from the Location tab.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>telprompt</string>
+		<string>alexa</string>
+		<string>tg</string>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

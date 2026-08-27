@@ -467,6 +467,10 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     const def = capability(id as CapabilityId);
     writeFileSync(path.join(capsDir, `${id}.md`), def.workspaceDoc);
   }
+  // Always on: every claw can be reached from, and can ask after, its owner's
+  // iPhone (the "My Claw" app, backend at 8examples.com/api/mobile). It only
+  // needs the telemetry token the tenant already has.
+  writeFileSync(path.join(capsDir, 'iphone.md'), template('workspace/capabilities/iphone.md', vars));
 
   const nudgesDir = path.join(workspace, 'nudges');
   mkdirSync(nudgesDir, { recursive: true });

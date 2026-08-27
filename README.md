@@ -201,6 +201,17 @@ needed for `tailscale set`). Expect a Pi 4-class node to top out around
 - The gateway of each tenant publishes only on `127.0.0.1:<port>` — put your
   reverse proxy / tailnet in front for remote admin access.
 
+## iPhone app ("My Claw")
+
+`openclaw-iphone/` holds the SwiftUI app people use to chat with their claw(s),
+share their location every 5 minutes (opt-in — the claws ask
+`GET https://8examples.com/api/mobile/queries/owner-location?clawId=…`), and get
+set-up pages for their website, phone number, Telegram bot and the Alexa "My
+Claw" skill — plus the fleet-box relay worker that runs their messages through
+`docker exec … openclaw agent`. The event-sourced backend lives in the
+8examples repo (`src/app/lib/mobile.ts`). See
+[openclaw-iphone/README.md](openclaw-iphone/README.md).
+
 ## Suggested cron
 
 ```cron

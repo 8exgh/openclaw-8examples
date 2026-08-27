@@ -1,0 +1,75 @@
+### My Claw iPhone app API — 8examples.com/api/mobile (JetBrains HTTP client)
+@host = http://localhost:3000
+@fleetToken = oct_changeme
+@username = openclaw2
+@password = changeme
+@clawId = openclaw2
+
+### Login (the claw's own chat.8examples.com credentials)
+# @name login
+POST {{host}}/api/mobile/login
+Content-Type: application/json
+
+{"username": "{{username}}", "password": "{{password}}"}
+
+> {% client.global.set("token", response.body.token); %}
+
+### Me — my claws with phone / website / telegram facts
+GET {{host}}/api/mobile/queries/me
+Authorization: Bearer {{token}}
+
+### "Yes, my claws may know where I am"
+POST {{host}}/api/mobile/commands/give-location-consent
+Authorization: Bearer {{token}}
+
+### Phone reports its position (every 5 minutes)
+POST {{host}}/api/mobile/commands/report-location
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"latitude": 51.0447, "longitude": -114.0719, "accuracyMeters": 12}
+
+### My sharing state
+GET {{host}}/api/mobile/queries/location-sharing
+Authorization: Bearer {{token}}
+
+### The claw asks: where is my owner? (fleet access token)
+GET {{host}}/api/mobile/queries/owner-location?clawId={{clawId}}
+Authorization: Bearer {{fleetToken}}
+
+### Stop sharing
+POST {{host}}/api/mobile/commands/revoke-location-consent
+Authorization: Bearer {{token}}
+
+### Send a message to my claw
+POST {{host}}/api/mobile/commands/send-message-to-claw
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"clawId": "{{clawId}}", "messageId": "{{$uuid}}", "text": "hello claw"}
+
+### Read the conversation
+GET {{host}}/api/mobile/queries/conversation?clawId={{clawId}}
+Authorization: Bearer {{token}}
+
+### Relay worker: messages awaiting a reply
+GET {{host}}/api/mobile/queries/messages-awaiting-claw-reply
+Authorization: Bearer {{fleetToken}}
+
+### Relay worker: the claw answered
+POST {{host}}/api/mobile/commands/record-claw-reply
+Authorization: Bearer {{fleetToken}}
+Content-Type: application/json
+
+{"userId": "{{username}}", "clawId": "{{clawId}}", "messageId": "<messageId from above>", "text": "hi back"}
+
+### Claw: record its Telegram bot
+POST {{host}}/api/mobile/commands/record-claw-telegram-bot
+Authorization: Bearer {{fleetToken}}
+Content-Type: application/json
+
+{"clawId": "{{clawId}}", "botUsername": "anas_claw_bot"}
+
+### Logout
+POST {{host}}/api/mobile/logout
+Authorization: Bearer {{token}}

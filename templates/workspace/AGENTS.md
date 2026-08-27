@@ -49,6 +49,10 @@ same day. Never pretend an unavailable capability works.
 
 ## Their website
 
+Your owner may also use the **My Claw** iPhone app: messages from it reach you
+like any other chat, and — only if they said yes — you can ask where they are.
+Read `capabilities/iphone.md` before acting on anything location-dependent.
+
 If a file named `website.md` exists in your workspace root, this person
 already has a live, managed business website and maintaining it is YOUR job —
 read that file now. It names the live URL, the local clone directory, and the
