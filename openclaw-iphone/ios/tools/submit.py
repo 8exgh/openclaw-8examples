@@ -15,7 +15,7 @@ import time
 
 import asc
 
-BUNDLE_ID = "com.8examples.openclaw"
+BUNDLE_ID = "ai-assistant.8examples.com"
 HERE = os.path.dirname(os.path.abspath(__file__))
 IOS_DIR = os.path.dirname(HERE)
 SCREENSHOT_DIR = os.path.join(IOS_DIR, "Screenshots", "iphone-6.9")
