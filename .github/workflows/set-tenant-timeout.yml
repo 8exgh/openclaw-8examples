@@ -1,0 +1,37 @@
+name: Set tenant agent timeout
+
+on:
+  workflow_dispatch:
+    inputs:
+      tenant:
+        description: Tenant id
+        required: true
+      seconds:
+        description: Interactive agent timeout in seconds (60-3600)
+        required: true
+
+concurrency:
+  group: managed-openclaw-fleet
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: [self-hosted, Linux, X64, openclaw-dc]
+    steps:
+      - name: Persist, render, and verify tenant timeout
+        env:
+          TENANT: ${{ inputs.tenant }}
+          TIMEOUT_SECONDS: ${{ inputs.seconds }}
+        run: |
+          set -euo pipefail
+          case "$TENANT" in *[!a-z0-9-]*|"") echo "invalid tenant"; exit 1;; esac
+          case "$TIMEOUT_SECONDS" in *[!0-9]*|"") echo "invalid timeout"; exit 1;; esac
+          cd "$HOME/managed-openclaw"
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+          npm ci
+          npm run typecheck
+          npm run cli -- set-timeout "$TENANT" "$TIMEOUT_SECONDS"
+          test "$(jq -r '.agents.defaults.timeoutSeconds' "tenants/$TENANT/config/openclaw.json")" = "$TIMEOUT_SECONDS"
+          docker ps --filter "name=^openclaw-$TENANT$" --filter status=running --format '{{.Names}} {{.Status}}'

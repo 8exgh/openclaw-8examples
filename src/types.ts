@@ -74,6 +74,8 @@ export interface Tenant {
   tier?: Tier;
   /** Operator override; omitted means derived from enabled capabilities. */
   resources?: Partial<Resources>;
+  /** Interactive agent-run limit. Omitted uses OpenClaw's default (600 seconds). */
+  agentTimeoutSeconds?: number;
   /** Telegram peers allowed to reach this bot (e.g. ["telegram:123"]); empty/absent = open to anyone. */
   telegramAllowFrom?: string[];
   createdAt: string;

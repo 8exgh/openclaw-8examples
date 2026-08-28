@@ -153,6 +153,7 @@ export function buildOpenclawConfig(
     agents: {
       defaults: {
         workspace: '/home/node/.openclaw/workspace',
+        ...(tenant.agentTimeoutSeconds ? { timeoutSeconds: tenant.agentTimeoutSeconds } : {}),
         model: {
           primary: 'anthropic/claude-opus-4-8',
           // Authentication is installed separately in each tenant's persisted

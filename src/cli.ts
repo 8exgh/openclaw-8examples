@@ -11,7 +11,7 @@ import {
   tailscaleOnline,
   tenantTag,
 } from './egress.js';
-import { applyOpenAIAuth, applyTenant, offboardTenant, runNudge, runNudgesAll, setCapability, signup, summarize, updateFleet } from './ops.js';
+import { applyOpenAIAuth, applyTenant, offboardTenant, runNudge, runNudgesAll, setAgentTimeout, setCapability, signup, summarize, updateFleet } from './ops.js';
 import { managedVersion } from './provisioner/render.js';
 import { renderSeed } from './provisioner/seed.js';
 import { getTenant, loadFleet, loadTenants, tenantDir } from './store.js';
@@ -67,6 +67,8 @@ Usage: npm run cli -- <command> [args]
   enable <tenant> <capability>  Switch a capability on (re-renders + restarts)
   disable <tenant> <capability> Switch a capability off
   apply <tenant>                Re-render on current templates/config + restart
+  set-timeout <tenant> <seconds>
+                                Set interactive agent timeout (60-3600) + restart
   apply-openai <tenant> <credential-file>
                                 Install a ChatGPT/Codex OAuth credential as the
                                 tenant's OpenAI fallback auth profile
@@ -159,6 +161,15 @@ async function main(): Promise<void> {
     case 'apply': {
       const result = applyTenant(getTenant(positional[0]), { start });
       console.log(`Applied ${managedVersion()} to ${positional[0]}`);
+      reportApply(result);
+      break;
+    }
+    case 'set-timeout': {
+      const [tenantId, rawSeconds] = positional;
+      const timeoutSeconds = Number(rawSeconds);
+      if (!tenantId || !rawSeconds) throw new Error('Usage: set-timeout <tenant> <seconds>');
+      const result = setAgentTimeout(tenantId, timeoutSeconds, { start });
+      console.log(`Set interactive agent timeout for ${tenantId} to ${timeoutSeconds} seconds`);
       reportApply(result);
       break;
     }

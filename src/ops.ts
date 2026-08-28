@@ -186,6 +186,20 @@ export function setCapability(
   return applyTenant(tenant, opts);
 }
 
+export function setAgentTimeout(
+  tenantId: string,
+  timeoutSeconds: number,
+  opts: { start?: boolean } = {},
+): ApplyResult {
+  if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 60 || timeoutSeconds > 3600) {
+    throw new Error('Agent timeout must be a whole number from 60 through 3600 seconds');
+  }
+  const tenant = getTenant(tenantId);
+  tenant.agentTimeoutSeconds = timeoutSeconds;
+  upsertTenant(tenant);
+  return applyTenant(tenant, opts);
+}
+
 /** Run the nudge engine for one tenant; writes into its workspace when a nudge fires. */
 export function runNudge(tenant: Tenant): NudgeRecord | null {
   const nudge = pickNudge(tenant);
