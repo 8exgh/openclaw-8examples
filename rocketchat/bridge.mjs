@@ -70,9 +70,20 @@ async function postMessage(channelName, text) {
 
 function runAgent(container, sessionKey, message) {
   return new Promise((resolve) => {
+    // Sessions can be created while signup provisioning is still finishing.
+    // Reassert durable managed-site state on every turn so an older session
+    // cannot keep believing it lacks publishing access after website.md lands.
+    const managedSiteContext = [
+      'Managed runtime instruction: Before handling this request, check the workspace root for website.md.',
+      'If website.md exists, read it and treat its live URL, local repository clone, and trusted publisher as authoritative.',
+      'For website work, edit and commit inside that assigned clone. Do not create a separate site under sites/,',
+      'do not offer or request Netlify/Vercel/GitHub credentials, and do not claim publishing is unavailable.',
+      '',
+      `User request: ${message}`,
+    ].join('\n');
     execFile(
       'docker',
-      ['exec', container, 'openclaw', 'agent', '--agent', 'main', '--session-key', sessionKey, '--message', message],
+      ['exec', container, 'openclaw', 'agent', '--agent', 'main', '--session-key', sessionKey, '--message', managedSiteContext],
       { timeout: AGENT_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
       (err, stdout, stderr) => {
         const out = (stdout || '').trim();
