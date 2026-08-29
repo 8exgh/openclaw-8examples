@@ -22,6 +22,9 @@ WEBHOOK_TOKEN=changeme-hook-token
 # Port the bridge listens on for Rocket.Chat's outgoing webhook.
 BRIDGE_PORT=8090
 CONTAINER_PREFIX=openclaw-
+# One minute longer than the 20-minute OpenClaw agent timeout. This prevents
+# the chat transport from terminating a still-valid agent turn.
+AGENT_TIMEOUT_MS=1260000
 ENV
   chmod 0600 /etc/openclaw/rc-bridge.env
   echo "Created /etc/openclaw/rc-bridge.env — fill in RC_BOT_PASS / WEBHOOK_TOKEN to match provisioning."
@@ -46,6 +49,7 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable --now openclaw-rc-bridge.service
+systemctl enable openclaw-rc-bridge.service
+systemctl restart openclaw-rc-bridge.service
 sleep 2
 systemctl --no-pager status openclaw-rc-bridge.service | head -6 || true

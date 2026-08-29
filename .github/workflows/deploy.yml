@@ -31,6 +31,10 @@ jobs:
           npm ci
           npm run typecheck
           npm run cli -- update --canary "$CANARY"
+          # The Rocket.Chat bridge is outside the tenant containers. Reinstall
+          # and restart it on every rollout so transport fixes actually reach
+          # live chat requests.
+          sudo bash rocketchat/deploy-bridge.sh
           phone_tenants=$(jq '[.[] | select(.offboardedAt == null and .capabilities.phone.enabled == true)] | length' data/tenants.json)
           if [ "$phone_tenants" -gt 0 ]; then
             [ -n "$OPENCLAW_PHONE_HOOK_URL_TEMPLATE" ] || {

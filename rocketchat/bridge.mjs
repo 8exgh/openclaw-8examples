@@ -17,7 +17,9 @@ const BOT_PASS = process.env.RC_BOT_PASS || '';
 const HOOK_TOKEN = process.env.WEBHOOK_TOKEN || '';
 const PORT = Number(process.env.BRIDGE_PORT || 8090);
 const CONTAINER_PREFIX = process.env.CONTAINER_PREFIX || 'openclaw-';
-const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 150000);
+// Tenant agent turns may run for 20 minutes. Keep the transport alive slightly
+// longer so OpenClaw, rather than this wrapper, owns the user-facing deadline.
+const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 21 * 60 * 1000);
 
 let auth = null; // { authToken, userId }
 
