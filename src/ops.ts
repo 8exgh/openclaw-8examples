@@ -3,7 +3,7 @@ import path from 'node:path';
 import { CAPABILITIES, capability } from './capabilities/registry.js';
 import { pickExitNode } from './egress.js';
 import { deliverToWorkspace, pickNudge } from './nudges/engine.js';
-import { dockerAvailable, pullImage, resolveDigest } from './provisioner/docker.js';
+import { containerStatus, dockerAvailable, pullImage, resolveDigest } from './provisioner/docker.js';
 import { getProvisioner } from './provisioner/index.js';
 import { managedVersion } from './provisioner/render.js';
 import {
@@ -122,7 +122,19 @@ export function syncModelAccess(assignedIds: ReadonlySet<string>): { assigned: n
   for (const tenant of tenants) {
     if (tenant.offboardedAt) continue;
     const next = assignedIds.has(tenant.id) ? 'assigned' : 'suppressed';
-    if (tenant.modelAccess !== next) changed.push(tenant.id);
+    const envFile = path.join(tenantDir(tenant.id), '.env');
+    const env = existsSync(envFile) ? readFileSync(envFile, 'utf8') : '';
+    const hasRealKey = (key: string): boolean => {
+      const match = env.match(new RegExp(`^${key}=(.+)$`, 'm'));
+      return Boolean(match?.[1] && match[1] !== 'changeme');
+    };
+    const credentialsMatch = next === 'assigned'
+      ? hasRealKey('ANTHROPIC_API_KEY') || hasRealKey('KIMI_API_KEY')
+      : !/^ANTHROPIC_API_KEY=/m.test(env) && !/^KIMI_API_KEY=/m.test(env);
+    const runtimeReady = tenant.tier === 'desktop' || /\bUp\b/i.test(containerStatus(tenant));
+    // Compare the desired state with what is actually on disk and running.
+    // A prior interrupted reconcile may have saved the flag before apply failed.
+    if (!credentialsMatch || !runtimeReady) changed.push(tenant.id);
     tenant.modelAccess = next;
     if (tenant.modelAccess === 'assigned') assigned += 1;
     else suppressed += 1;
