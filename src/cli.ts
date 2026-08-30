@@ -149,7 +149,7 @@ async function main(): Promise<void> {
         const ids = new Set((str(flags, 'assigned') ?? '').split(',').map((id) => id.trim()).filter(Boolean));
         const result = syncModelAccess(ids);
         if (flags.has('apply')) {
-          for (const id of result.changed) applyTenant(getTenant(id), { start });
+          for (const id of result.changed) setModelAccess(id, ids.has(id), { start });
         }
         console.log(`Model access synchronized: ${result.assigned} assigned, ${result.suppressed} suppressed, ${result.changed.length} changed${flags.has('apply') ? ' and applied' : ''}`);
         break;

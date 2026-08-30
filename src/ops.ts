@@ -110,7 +110,15 @@ export function setModelAccess(tenantId: string, assigned: boolean, opts: { star
   const tenant = getTenant(tenantId);
   tenant.modelAccess = assigned ? 'assigned' : 'suppressed';
   upsertTenant(tenant);
-  return applyTenant(tenant, opts);
+  if (assigned) return applyTenant(tenant, opts);
+  // Unassigned inventory has no reason to run. Render without credentials,
+  // then remove its runtime so a configured provider cannot crash-loop and no
+  // channel can accidentally consume models before assignment.
+  const result = applyTenant(tenant, { start: false });
+  if (opts.start !== false && process.env.MOC_NO_START !== '1' && tenant.tier !== 'desktop') {
+    getProvisioner(tenant.tier).teardown(tenant);
+  }
+  return result;
 }
 
 /** Synchronize every inventory slot atomically before a fleet rollout. */
@@ -131,7 +139,10 @@ export function syncModelAccess(assignedIds: ReadonlySet<string>): { assigned: n
     const credentialsMatch = next === 'assigned'
       ? hasRealKey('ANTHROPIC_API_KEY') || hasRealKey('KIMI_API_KEY')
       : !/^ANTHROPIC_API_KEY=/m.test(env) && !/^KIMI_API_KEY=/m.test(env);
-    const runtimeReady = tenant.tier === 'desktop' || /\bUp\b/i.test(containerStatus(tenant));
+    const status = containerStatus(tenant);
+    const runtimeReady = tenant.tier === 'desktop' || (next === 'assigned'
+      ? /\bUp\b/i.test(status)
+      : status === 'not created' || /\bExited\b/i.test(status));
     // Compare the desired state with what is actually on disk and running.
     // A prior interrupted reconcile may have saved the flag before apply failed.
     if (!credentialsMatch || !runtimeReady) changed.push(tenant.id);
