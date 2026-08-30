@@ -292,14 +292,27 @@ function parseEnv(content: string): Map<string, string> {
 function renderEnv(tenant: Tenant, dir: string): string[] {
   const file = path.join(dir, '.env');
   const env = existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : new Map<string, string>();
+  const escrowFile = path.join(dir, '.model-credentials.env');
+  const escrow = existsSync(escrowFile)
+    ? parseEnv(readFileSync(escrowFile, 'utf8'))
+    : new Map<string, string>();
 
   const ensure = (key: string, value: string): void => {
     if (!env.get(key)) env.set(key, value);
   };
 
   ensure('OPENCLAW_GATEWAY_TOKEN', randomBytes(24).toString('hex'));
-  ensure('ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY ?? 'changeme');
-  ensure('KIMI_API_KEY', process.env.KIMI_API_KEY ?? 'changeme');
+  const modelKeys = ['ANTHROPIC_API_KEY', 'KIMI_API_KEY'] as const;
+  if (tenant.modelAccess === 'suppressed') {
+    for (const key of modelKeys) {
+      const value = env.get(key);
+      if (value && value !== 'changeme') escrow.set(key, value);
+      env.delete(key);
+    }
+    writeFileSync(escrowFile, [...escrow].map(([key, value]) => `${key}=${value}`).join('\n') + '\n', { mode: 0o600 });
+  } else {
+    for (const key of modelKeys) ensure(key, escrow.get(key) ?? process.env[key] ?? 'changeme');
+  }
   // Fleet call-home telemetry (openclaw-telemetry on npm): the token is
   // inherited from the control plane's environment at render time; when
   // absent, the tenant's reporter simply stays off.

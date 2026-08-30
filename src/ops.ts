@@ -78,6 +78,7 @@ export function signup(input: SignupInput, opts: { start?: boolean } = {}): Appl
     tier: input.tier ?? 'container',
     gatewayPort,
     createdAt: now,
+    modelAccess: 'suppressed',
     capabilities: {},
     nudgeLog: [],
   };
@@ -102,6 +103,32 @@ export function signup(input: SignupInput, opts: { start?: boolean } = {}): Appl
   runNudge(tenant);
 
   return applyTenant(tenant, opts);
+}
+
+/** Record the sales system's authoritative assignment state. */
+export function setModelAccess(tenantId: string, assigned: boolean, opts: { start?: boolean } = {}): ApplyResult {
+  const tenant = getTenant(tenantId);
+  tenant.modelAccess = assigned ? 'assigned' : 'suppressed';
+  upsertTenant(tenant);
+  return applyTenant(tenant, opts);
+}
+
+/** Synchronize every inventory slot atomically before a fleet rollout. */
+export function syncModelAccess(assignedIds: ReadonlySet<string>): { assigned: number; suppressed: number; changed: string[] } {
+  const tenants = loadTenants();
+  let assigned = 0;
+  let suppressed = 0;
+  const changed: string[] = [];
+  for (const tenant of tenants) {
+    if (tenant.offboardedAt) continue;
+    const next = assignedIds.has(tenant.id) ? 'assigned' : 'suppressed';
+    if (tenant.modelAccess !== next) changed.push(tenant.id);
+    tenant.modelAccess = next;
+    if (tenant.modelAccess === 'assigned') assigned += 1;
+    else suppressed += 1;
+  }
+  saveTenants(tenants);
+  return { assigned, suppressed, changed };
 }
 
 function parseJwtExp(token: string): number | undefined {

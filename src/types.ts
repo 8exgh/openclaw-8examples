@@ -79,6 +79,8 @@ export interface Tenant {
   /** Telegram peers allowed to reach this bot (e.g. ["telegram:123"]); empty/absent = open to anyone. */
   telegramAllowFrom?: string[];
   createdAt: string;
+  /** Provider credentials are available only after 8examples assigns this inventory slot. */
+  modelAccess?: 'assigned' | 'suppressed';
   capabilities: Partial<Record<CapabilityId, CapabilityState>>;
   nudgeLog: NudgeRecord[];
   applied?: AppliedRelease;
