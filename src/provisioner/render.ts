@@ -37,6 +37,13 @@ function ensureDirForContainer(dir: string, mode = 0o755): void {
 /** Bump when the managed layer changes in a way not captured by template files. */
 export const MANAGED_LAYER_VERSION = '0.1.0';
 
+/** Credentials capable of funding model calls; suppressed inventory may not mount any of them. */
+export const MODEL_CREDENTIAL_KEYS = [
+  'ANTHROPIC_API_KEY',
+  'KIMI_API_KEY',
+  'MINIMAX_API_KEY',
+] as const;
+
 /** Version fingerprint of the managed layer: templates + code version. */
 export function managedVersion(): string {
   const hash = createHash('sha256');
@@ -131,7 +138,12 @@ function channelConfig(tenant: Tenant, opts: { channelReady: boolean }): Record<
 /** Build the tenant's openclaw.json: managed base + every enabled capability's patch. */
 export function buildOpenclawConfig(
   tenant: Tenant,
-  opts: { channelReady?: boolean; moonshotSearchReady?: boolean; braveSearchReady?: boolean } = {},
+  opts: {
+    channelReady?: boolean;
+    moonshotSearchReady?: boolean;
+    braveSearchReady?: boolean;
+    minimaxReady?: boolean;
+  } = {},
 ): Record<string, unknown> {
   let config: Record<string, unknown> = {
     gateway: {
@@ -163,6 +175,7 @@ export function buildOpenclawConfig(
           fallbacks: [
             'openai/gpt-5.6-sol',
             'kimi/k3',
+            ...(opts.minimaxReady ? ['minimax/MiniMax-M3'] : []),
           ],
         },
         heartbeat: { every: heartbeatEvery(tenant.id), target: 'last' },
@@ -180,6 +193,7 @@ export function buildOpenclawConfig(
     plugins: {
       entries: {
         kimi: { enabled: true },
+        ...(opts.minimaxReady ? { minimax: { enabled: true } } : {}),
         // Kimi web_search talks to Moonshot's PLATFORM api, which takes a
         // different credential than the Kimi Coding membership key the chat
         // models use — hence its own env var.
@@ -249,11 +263,34 @@ export function buildOpenclawConfig(
             },
           ],
         },
+        ...(opts.minimaxReady
+          ? {
+              minimax: {
+                baseUrl: 'https://api.minimax.io/anthropic',
+                apiKey: '${MINIMAX_API_KEY}',
+                api: 'anthropic-messages',
+                models: [
+                  {
+                    id: 'MiniMax-M3',
+                    name: 'MiniMax M3',
+                    reasoning: true,
+                    input: ['text', 'image'],
+                    cost: { input: 0.6, output: 2.4, cacheRead: 0.12, cacheWrite: 0 },
+                    contextWindow: 1000000,
+                    maxTokens: 131072,
+                  },
+                ],
+              },
+            }
+          : {}),
       },
     },
     auth: {
       profiles: {
         'kimi:manual': { provider: 'kimi', mode: 'api_key' },
+        ...(opts.minimaxReady
+          ? { 'minimax:manual': { provider: 'minimax', mode: 'api_key' } }
+          : {}),
       },
     },
   };
@@ -302,16 +339,19 @@ function renderEnv(tenant: Tenant, dir: string): string[] {
   };
 
   ensure('OPENCLAW_GATEWAY_TOKEN', randomBytes(24).toString('hex'));
-  const modelKeys = ['ANTHROPIC_API_KEY', 'KIMI_API_KEY'] as const;
   if (tenant.modelAccess === 'suppressed') {
-    for (const key of modelKeys) {
+    for (const key of MODEL_CREDENTIAL_KEYS) {
       const value = env.get(key);
       if (value && value !== 'changeme') escrow.set(key, value);
+      else {
+        const inherited = process.env[key];
+        if (inherited && inherited !== 'changeme') escrow.set(key, inherited);
+      }
       env.delete(key);
     }
     writeFileSync(escrowFile, [...escrow].map(([key, value]) => `${key}=${value}`).join('\n') + '\n', { mode: 0o600 });
   } else {
-    for (const key of modelKeys) ensure(key, escrow.get(key) ?? process.env[key] ?? 'changeme');
+    for (const key of MODEL_CREDENTIAL_KEYS) ensure(key, escrow.get(key) ?? process.env[key] ?? 'changeme');
   }
   // Fleet call-home telemetry (openclaw-telemetry on npm): the token is
   // inherited from the control plane's environment at render time; when
@@ -413,6 +453,11 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
   };
   const moonshotSearchReady = searchKeyReady('MOONSHOT_API_KEY');
   const braveSearchReady = searchKeyReady('BRAVE_API_KEY');
+  const escrowFile = path.join(dir, '.model-credentials.env');
+  const minimaxReady = tenant.modelAccess !== 'suppressed' && (
+    searchKeyReady('MINIMAX_API_KEY') ||
+    (existsSync(escrowFile) && parseEnv(readFileSync(escrowFile, 'utf8')).get('MINIMAX_API_KEY') !== undefined)
+  );
 
   // OpenClaw writes config provenance metadata and restores its last-known-good
   // backup during shutdown when that metadata suddenly disappears. Preserve it
@@ -427,7 +472,12 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
       /* A malformed config will be replaced by the managed render below. */
     }
   }
-  const renderedConfig = buildOpenclawConfig(tenant, { channelReady, moonshotSearchReady, braveSearchReady });
+  const renderedConfig = buildOpenclawConfig(tenant, {
+    channelReady,
+    moonshotSearchReady,
+    braveSearchReady,
+    minimaxReady,
+  });
   if (existingMeta !== undefined) renderedConfig.meta = existingMeta;
 
   writeFileSync(

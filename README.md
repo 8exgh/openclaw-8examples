@@ -191,8 +191,9 @@ needed for `tailscale set`). Expect a Pi 4-class node to top out around
   `no-new-privileges` — if it silently falls back to `--no-sandbox`, treat that as
   the trigger to move browser workloads to stronger isolation (gVisor/Kata or the
   desktop-VM tier).
-- **Model access**: Anthropic is the primary and `openai/gpt-5.6-sol` is the
-  managed fallback. Each tenant's `.env` gets `ANTHROPIC_API_KEY` (inherited
+- **Model access**: Anthropic is the primary, followed by
+  `openai/gpt-5.6-sol`, `kimi/k3`, and (when `MINIMAX_API_KEY` is present)
+  `minimax/MiniMax-M3`. Each tenant's `.env` gets `ANTHROPIC_API_KEY` (inherited
   from your environment at render time if set). Install OpenAI authentication
   separately in each tenant's persistent auth store; do not copy one ChatGPT
   OAuth refresh token across containers because token rotation will cause the

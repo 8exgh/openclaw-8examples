@@ -5,7 +5,7 @@ import { pickExitNode } from './egress.js';
 import { deliverToWorkspace, pickNudge } from './nudges/engine.js';
 import { containerStatus, dockerAvailable, pullImage, resolveDigest } from './provisioner/docker.js';
 import { getProvisioner } from './provisioner/index.js';
-import { managedVersion } from './provisioner/render.js';
+import { managedVersion, MODEL_CREDENTIAL_KEYS } from './provisioner/render.js';
 import {
   TENANTS_DIR,
   getTenant,
@@ -137,8 +137,8 @@ export function syncModelAccess(assignedIds: ReadonlySet<string>): { assigned: n
       return Boolean(match?.[1] && match[1] !== 'changeme');
     };
     const credentialsMatch = next === 'assigned'
-      ? hasRealKey('ANTHROPIC_API_KEY') || hasRealKey('KIMI_API_KEY')
-      : !/^ANTHROPIC_API_KEY=/m.test(env) && !/^KIMI_API_KEY=/m.test(env);
+      ? MODEL_CREDENTIAL_KEYS.some(hasRealKey)
+      : MODEL_CREDENTIAL_KEYS.every((key) => !new RegExp(`^${key}=`, 'm').test(env));
     const status = containerStatus(tenant);
     const runtimeReady = tenant.tier === 'desktop' || (next === 'assigned'
       ? /\bUp\b/i.test(status)
