@@ -42,13 +42,25 @@ export function activeTenants(): Tenant[] {
   return loadTenants().filter((t) => !t.offboardedAt);
 }
 
+/** Stored assignment state is a hard runtime boundary for every apply/update path. */
+export function runtimeStartAllowed(tenant: Tenant): boolean {
+  return tenant.modelAccess !== 'suppressed';
+}
+
 /** Render the tenant to disk on the current fleet release and (re)start its runtime. */
 export function applyTenant(tenant: Tenant, opts: { start?: boolean } = {}): ApplyResult {
   const fleet = loadFleet();
-  const wantStart = opts.start !== false && process.env.MOC_NO_START !== '1';
-  const { started, missingEnv } = getProvisioner(tenant.tier).apply(tenant, fleet, {
+  const requestedStart = opts.start !== false && process.env.MOC_NO_START !== '1';
+  const wantStart = requestedStart && runtimeStartAllowed(tenant);
+  const provisioner = getProvisioner(tenant.tier);
+  const { started, missingEnv } = provisioner.apply(tenant, fleet, {
     start: wantStart,
   });
+
+  if (!runtimeStartAllowed(tenant) && requestedStart && tenant.tier !== 'desktop') {
+    const status = provisioner.status(tenant);
+    if (status !== 'not created' && !/\bExited\b/i.test(status)) provisioner.teardown(tenant);
+  }
 
   tenant.applied = {
     imageRef: fleet.pinnedImageRef ?? fleet.image,

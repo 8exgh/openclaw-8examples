@@ -35,7 +35,7 @@ function ensureDirForContainer(dir: string, mode = 0o755): void {
 }
 
 /** Bump when the managed layer changes in a way not captured by template files. */
-export const MANAGED_LAYER_VERSION = '0.1.0';
+export const MANAGED_LAYER_VERSION = '0.1.1';
 
 /** Credentials capable of funding model calls; suppressed inventory may not mount any of them. */
 export const MODEL_CREDENTIAL_KEYS = [

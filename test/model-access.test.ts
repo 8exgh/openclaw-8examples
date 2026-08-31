@@ -2,12 +2,23 @@ import assert from 'node:assert/strict';
 import { readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { runtimeStartAllowed } from '../src/ops.js';
 import { buildOpenclawConfig, renderTenant } from '../src/provisioner/render.js';
 import type { Fleet, Tenant } from '../src/types.js';
 
 // The renderer uses the repository tenant root, so exercise the public behavior
 // through an isolated tenant id and always clean it up.
 const fleet: Fleet = { releaseChannel: 'latest', image: 'test/image', nextPort: 1 };
+
+test('every apply path refuses to start suppressed inventory', () => {
+  const tenant: Tenant = { id: 'test-runtime', name: 'test-runtime', contact: {}, channel: 'whatsapp', gatewayPort: 29989,
+    tier: 'container', createdAt: new Date().toISOString(), modelAccess: 'suppressed', capabilities: {}, nudgeLog: [] };
+  assert.equal(runtimeStartAllowed(tenant), false);
+  tenant.modelAccess = 'assigned';
+  assert.equal(runtimeStartAllowed(tenant), true);
+  tenant.modelAccess = undefined;
+  assert.equal(runtimeStartAllowed(tenant), true, 'legacy tenants stay fail-open until authoritative sync');
+});
 
 test('MiniMax is appended as the fourth model only when its credential is ready', () => {
   const tenant: Tenant = { id: 'test-config', name: 'test-config', contact: {}, channel: 'whatsapp', gatewayPort: 29990,
