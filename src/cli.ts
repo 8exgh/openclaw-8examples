@@ -11,7 +11,7 @@ import {
   tailscaleOnline,
   tenantTag,
 } from './egress.js';
-import { applyOpenAIAuth, applyTenant, offboardTenant, runNudge, runNudgesAll, setAgentTimeout, setCapability, setModelAccess, signup, summarize, syncModelAccess, updateFleet } from './ops.js';
+import { applyOpenAIAuth, applyTenant, offboardTenant, pinTenantImage, runNudge, runNudgesAll, setAgentTimeout, setCapability, setModelAccess, signup, summarize, syncModelAccess, updateFleet } from './ops.js';
 import { managedVersion } from './provisioner/render.js';
 import { renderSeed } from './provisioner/seed.js';
 import { getTenant, loadFleet, loadTenants, tenantDir } from './store.js';
@@ -43,6 +43,11 @@ function str(flags: Map<string, string | true>, key: string): string | undefined
   return typeof v === 'string' ? v : undefined;
 }
 
+/** Compact display form for digest-pinned image refs. */
+function shortRef(ref: string): string {
+  return ref.replace(/@sha256:([0-9a-f]{12})[0-9a-f]+$/, '@$1…');
+}
+
 function reportApply(result: { tenant: { id: string }; missingEnv: string[]; started: boolean }): void {
   console.log(`  rendered: ${tenantDir(result.tenant.id)}`);
   console.log(`  container: ${result.started ? 'started' : 'not started (docker off or --no-start)'}`);
@@ -67,6 +72,11 @@ Usage: npm run cli -- <command> [args]
   enable <tenant> <capability>  Switch a capability on (re-renders + restarts)
   disable <tenant> <capability> Switch a capability off
   apply <tenant>                Re-render on current templates/config + restart
+  pin <tenant> <image-ref>      Run one tenant on a specific OpenClaw release
+                                (digest-pinned; the canary path for a major
+                                upgrade). Fleet updates leave the pin alone.
+  pin <tenant> --fleet          Return the tenant to the fleet release — mind
+                                one-way migrations before pinning backwards
   set-timeout <tenant> <seconds>
                                 Set interactive agent timeout (60-3600) + restart
   apply-openai <tenant> <credential-file>
@@ -160,7 +170,7 @@ async function main(): Promise<void> {
       for (const t of loadTenants()) {
         const s = summarize(t);
         const caps = Object.entries(s.capabilities).filter(([, on]) => on).map(([id]) => id).join(',');
-        console.log(`${s.id}\t${s.channel}\tport ${s.gatewayPort}\t[${caps}]\t${s.container}${s.egress ? `\tvia ${s.egress}` : ''}${s.upToDate ? '' : '\t(update pending)'}${s.offboarded ? '\t(offboarded)' : ''}`);
+        console.log(`${s.id}\t${s.channel}\tport ${s.gatewayPort}\t[${caps}]\t${s.container}${s.egress ? `\tvia ${s.egress}` : ''}${s.pinnedImageRef ? `\t(pinned ${shortRef(s.pinnedImageRef)})` : ''}${s.upToDate ? '' : '\t(update pending)'}${s.offboarded ? '\t(offboarded)' : ''}`);
       }
       break;
     }
@@ -183,6 +193,21 @@ async function main(): Promise<void> {
     case 'apply': {
       const result = applyTenant(getTenant(positional[0]), { start });
       console.log(`Applied ${managedVersion()} to ${positional[0]}`);
+      reportApply(result);
+      break;
+    }
+    case 'pin': {
+      const [tenantId, ref] = positional;
+      const toFleet = flags.has('fleet');
+      if (!tenantId || (!ref && !toFleet)) {
+        throw new Error('Usage: pin <tenant> <image-ref> | pin <tenant> --fleet');
+      }
+      const result = pinTenantImage(tenantId, toFleet ? null : ref, { start });
+      console.log(
+        toFleet
+          ? `${tenantId}: back on the fleet release`
+          : `${tenantId}: pinned to ${result.tenant.pinnedImageRef}`,
+      );
       reportApply(result);
       break;
     }
@@ -242,7 +267,7 @@ async function main(): Promise<void> {
       console.log(`release: ${fleet.pinnedImageRef ?? fleet.image} | managed: ${managedVersion()} | tenants: ${loadTenants().length}`);
       for (const t of loadTenants()) {
         const s = summarize(t);
-        console.log(`  ${s.id}: ${s.container}${s.upToDate ? '' : ' (update pending)'}`);
+        console.log(`  ${s.id}: ${s.container}${s.pinnedImageRef ? ` (pinned ${shortRef(s.pinnedImageRef)})` : ''}${s.upToDate ? '' : ' (update pending)'}`);
       }
       break;
     }

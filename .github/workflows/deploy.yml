@@ -30,7 +30,36 @@ jobs:
           git pull --ff-only origin main
           npm ci
           npm run typecheck
+          # 2026.8.1+ migrations are one-way (sessions/auth move into SQLite):
+          # keep a pre-rollout snapshot of every tenant. node_modules are
+          # reinstallable and browser-cache is disposable.
+          ts=$(date +%Y%m%d-%H%M%S)
+          mkdir -p "$HOME/openclaw-backups"
+          for d in tenants/*/; do
+            t=$(basename "$d")
+            tar czf "$HOME/openclaw-backups/$t-$ts.tar.gz" --exclude=browser-cache --exclude='*/node_modules' "tenants/$t"
+          done
+          find "$HOME/openclaw-backups" -name '*.tar.gz' -mtime +14 -delete
           npm run cli -- update --canary "$CANARY"
+          # 2026.8.1 post-upgrade repair, idempotent: migrates legacy state
+          # (file sessions -> SQLite — the v2 gateway REFUSES TO START until
+          # this ran on a tenant with legacy sessions — codex/* -> openai/*
+          # routes, auth-profile JSON -> agent SQLite). Runs in a one-off
+          # container with the gateway stopped: exec into the service races
+          # the crash-loop restart window. Plain `--fix` prompts and hangs
+          # without a TTY — keep --non-interactive. A tenant that was not
+          # running (suppressed inventory) is doctored but never started.
+          # Safe to remove once the fleet has settled on 2026.8.1+.
+          jq -r '.[] | select(.offboardedAt == null) | .id' data/tenants.json |
+          while read -r tenant; do
+            [ -f "tenants/$tenant/docker-compose.yml" ] || continue
+            running=0
+            docker ps --format '{{.Names}}' | grep -qx "openclaw-$tenant" && running=1
+            [ "$running" = "1" ] && (cd "tenants/$tenant" && docker compose stop)
+            (cd "tenants/$tenant" && docker compose run --rm --no-deps openclaw openclaw doctor --fix --non-interactive) \
+              || echo "doctor reported issues for $tenant (non-fatal)"
+            [ "$running" = "1" ] && (cd "tenants/$tenant" && docker compose up -d)
+          done
           # The Rocket.Chat bridge is outside the tenant containers. Reinstall
           # and restart it on every rollout so transport fixes actually reach
           # live chat requests.

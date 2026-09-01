@@ -46,6 +46,11 @@ npm run cli -- nudge
 # (--canary updates that tenant first and halts if it comes up unhealthy)
 npm run cli -- update --canary <your-own-tenant>
 
+# Canary a specific release on ONE tenant without moving the fleet (e.g. a
+# major version with one-way migrations); clear the pin once the fleet catches up
+npm run cli -- pin openclaw1 ghcr.io/openclaw/openclaw:2026.8.1
+npm run cli -- pin openclaw1 --fleet
+
 # Offboarding: stop + reclaim the port; --purge-data also deletes everything
 # stored about the person (the deletion-request path)
 npm run cli -- offboard ana-reyes

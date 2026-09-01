@@ -79,6 +79,8 @@ export interface Tenant {
   /** Telegram peers allowed to reach this bot (e.g. ["telegram:123"]); empty/absent = open to anyone. */
   telegramAllowFrom?: string[];
   createdAt: string;
+  /** Per-tenant release pin (e.g. canarying a major upgrade); overrides the fleet pin until cleared. */
+  pinnedImageRef?: string;
   /** Provider credentials are available only after 8examples assigns this inventory slot. */
   modelAccess?: 'assigned' | 'suppressed';
   capabilities: Partial<Record<CapabilityId, CapabilityState>>;

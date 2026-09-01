@@ -193,6 +193,18 @@ export function buildOpenclawConfig(
     plugins: {
       entries: {
         kimi: { enabled: true },
+        // 2026.8.1 turned model providers into plugins, and after a managed
+        // render (which replaces doctor's config additions) the gateway does
+        // not load anthropic/openai without these entries — leaving a healthy
+        // gateway with no primary or OpenAI-fallback model. The pre-2.0
+        // release ignores unknown entries with a warning.
+        anthropic: { enabled: true },
+        openai: { enabled: true },
+        // Since 2026.8.1 the WhatsApp channel is an external plugin needing
+        // explicit trust; without this entry the gateway warns and refuses the
+        // channel's setup guidance. Harmless on the older release (bundled).
+        // Telegram/Signal will need the same once a v2 tenant runs them.
+        ...(tenant.channel === 'whatsapp' ? { whatsapp: { enabled: true } } : {}),
         ...(opts.minimaxReady ? { minimax: { enabled: true } } : {}),
         // Kimi web_search talks to Moonshot's PLATFORM api, which takes a
         // different credential than the Kimi Coding membership key the chat
@@ -430,7 +442,7 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
   ensureDirForContainer(path.join(dir, 'auth-profile-secrets'), 0o700);
   ensureDirForContainer(path.join(dir, 'browser-cache'));
 
-  const imageRef = fleet.pinnedImageRef ?? fleet.image;
+  const imageRef = tenant.pinnedImageRef ?? fleet.pinnedImageRef ?? fleet.image;
   const res = resourcesFor(tenant);
 
   // Telegram only enables once a real bot token is in .env (from a prior render

@@ -63,7 +63,7 @@ export function applyTenant(tenant: Tenant, opts: { start?: boolean } = {}): App
   }
 
   tenant.applied = {
-    imageRef: fleet.pinnedImageRef ?? fleet.image,
+    imageRef: tenant.pinnedImageRef ?? fleet.pinnedImageRef ?? fleet.image,
     managedVersion: managedVersion(),
     appliedAt: new Date().toISOString(),
   };
@@ -114,6 +114,34 @@ export function signup(input: SignupInput, opts: { start?: boolean } = {}): Appl
   // Day-one nudge so the assistant starts selling the next capability immediately.
   runNudge(tenant);
 
+  return applyTenant(tenant, opts);
+}
+
+/**
+ * Run one tenant on a specific OpenClaw release ahead of (or behind) the fleet
+ * — the single-tenant path for canarying a major upgrade. The ref is resolved
+ * to a digest when docker is available; fleet updates leave the pin in place.
+ * Pass null to return the tenant to the fleet release. Mind one-way release
+ * migrations (2026.8.1 moves sessions into SQLite): clearing a pin back to an
+ * older fleet release needs that release's documented downgrade path first.
+ */
+export function pinTenantImage(
+  tenantId: string,
+  imageRef: string | null,
+  opts: { start?: boolean } = {},
+): ApplyResult {
+  const tenant = getTenant(tenantId);
+  if (imageRef === null) {
+    delete tenant.pinnedImageRef;
+  } else {
+    let next = imageRef;
+    if (dockerAvailable()) {
+      pullImage(imageRef);
+      next = resolveDigest(imageRef) ?? imageRef;
+    }
+    tenant.pinnedImageRef = next;
+  }
+  upsertTenant(tenant);
   return applyTenant(tenant, opts);
 }
 
@@ -397,6 +425,8 @@ export interface TenantSummary {
   /** Exit node the tenant's VM egresses through (desktop tier). */
   egress?: string;
   capabilities: Record<string, boolean>;
+  /** Set when the tenant runs a release pinned apart from the fleet. */
+  pinnedImageRef?: string;
   managedVersion?: string;
   upToDate: boolean;
   nudges: number;
@@ -416,6 +446,7 @@ export function summarize(tenant: Tenant): TenantSummary {
     capabilities: Object.fromEntries(
       Object.entries(tenant.capabilities).map(([id, s]) => [id, !!s?.enabled]),
     ),
+    pinnedImageRef: tenant.pinnedImageRef,
     managedVersion: tenant.applied?.managedVersion,
     upToDate: tenant.applied?.managedVersion === current,
     nudges: tenant.nudgeLog.length,
