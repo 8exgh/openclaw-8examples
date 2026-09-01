@@ -482,12 +482,19 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
   // OpenClaw writes config provenance metadata and restores its last-known-good
   // backup during shutdown when that metadata suddenly disappears. Preserve it
   // across managed renders so an intentional config update is not rolled back
-  // while docker compose recreates the container.
+  // while docker compose recreates the container. Same for `commands`:
+  // `openclaw pairing approve` writes commands.ownerAllowFrom (the operator
+  // account for owner-only commands and exec approvals) into the managed
+  // config, and a render must not silently demote the owner.
+  const PRESERVED_CONFIG_KEYS = ['meta', 'commands'] as const;
   const configFile = path.join(dir, 'config', 'openclaw.json');
-  let existingMeta: unknown;
+  const preserved: Record<string, unknown> = {};
   if (existsSync(configFile)) {
     try {
-      existingMeta = (JSON.parse(readFileSync(configFile, 'utf8')) as Record<string, unknown>).meta;
+      const existing = JSON.parse(readFileSync(configFile, 'utf8')) as Record<string, unknown>;
+      for (const key of PRESERVED_CONFIG_KEYS) {
+        if (existing[key] !== undefined) preserved[key] = existing[key];
+      }
     } catch {
       /* A malformed config will be replaced by the managed render below. */
     }
@@ -498,7 +505,7 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     braveSearchReady,
     minimaxReady,
   });
-  if (existingMeta !== undefined) renderedConfig.meta = existingMeta;
+  Object.assign(renderedConfig, preserved);
 
   writeFileSync(
     configFile,
