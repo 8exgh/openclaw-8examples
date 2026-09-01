@@ -25,9 +25,16 @@ function requiredPluginPackages(tenant: Tenant): string[] {
     const config = JSON.parse(readFileSync(file, 'utf8')) as {
       plugins?: { entries?: Record<string, { enabled?: boolean }> };
     };
-    return Object.entries(config.plugins?.entries ?? {})
+    const packages = Object.entries(config.plugins?.entries ?? {})
       .filter(([id, entry]) => entry?.enabled && EXTERNAL_PLUGIN_PACKAGES[id])
       .map(([id]) => EXTERNAL_PLUGIN_PACKAGES[id]);
+    // Since 2026.8.1 the kimi provider drags in a moonshot plugin requirement:
+    // a gateway with kimi enabled but moonshot unconsented refuses ready and
+    // crash-loops, even when the moonshot entry itself is not in the config.
+    if (packages.includes(EXTERNAL_PLUGIN_PACKAGES.kimi) && !packages.includes(EXTERNAL_PLUGIN_PACKAGES.moonshot)) {
+      packages.push(EXTERNAL_PLUGIN_PACKAGES.moonshot);
+    }
+    return packages;
   } catch {
     return [];
   }
