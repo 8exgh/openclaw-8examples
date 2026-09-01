@@ -154,11 +154,14 @@ export function buildOpenclawConfig(
     },
     // cap_drop: ALL prevents Chromium's Linux sandbox from initializing. The
     // container is the isolation boundary, so every managed browser launch
-    // must carry --no-sandbox explicitly. Headless can still be overridden by
-    // a tenant-specific compose file when a virtual display is desired.
+    // must carry --no-sandbox explicitly. Headful on the Xvfb display the
+    // compose command starts (2026.8.1 falls back to headless by itself when
+    // no DISPLAY exists); the old OPENCLAW_BROWSER_* env overrides are gone
+    // in 2026.8.1 — this config block is the only wiring.
     browser: {
       enabled: true,
-      headless: true,
+      headless: false,
+      defaultProfile: 'openclaw',
       noSandbox: true,
       extraArgs: ['--no-sandbox'],
     },
@@ -236,6 +239,11 @@ export function buildOpenclawConfig(
     // (requiresCredential: false ends the scan), so an unpinned tenant gets
     // search that is present but permanently failing. Always pin it.
     tools: {
+      // Since 2026.8.1 the agent's browser tool is gated by the tool profile,
+      // separately from the browser service: without this grant the service
+      // runs, `openclaw browser` works, and the agent still has no browser
+      // tool in its sessions.
+      alsoAllow: ['browser'],
       web: {
         // Brave first: ranked results with snippets suit an agent better than
         // one synthesized paragraph, and its free tier costs nothing. Kimi is

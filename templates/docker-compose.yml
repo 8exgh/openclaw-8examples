@@ -19,18 +19,13 @@ services:
     environment:
       # Real headful Chromium on a virtual display — full rendering, not
       # headless. Xvfb is started by the command below; the browser attaches
-      # to DISPLAY. NO_SANDBOX because cap_drop:ALL removes what Chrome's own
-      # sandbox needs (the container is the isolation boundary).
+      # to DISPLAY. Since 2026.8.1 all other browser behavior comes from
+      # openclaw.json (browser.enabled/headless/noSandbox/extraArgs and the
+      # tools.alsoAllow grant that exposes the tool to the agent) — the old
+      # OPENCLAW_BROWSER_* env vars are gone, and OPENCLAW_BROWSER_HEADLESS
+      # in particular forces HEADLESS by mere presence, any value. Do not
+      # reintroduce them.
       - DISPLAY=:99
-      - OPENCLAW_BROWSER_HEADLESS=false
-      - OPENCLAW_BROWSER_NO_SANDBOX=true
-      # Expose the browser tool to the agent (otherwise it only has web_fetch).
-      - OPENCLAW_BROWSER_ENABLED=true
-      # Chrome's own sandbox needs unprivileged userns, which cap_drop:ALL +
-      # no-new-privileges block — so launch via a wrapper that always adds
-      # --no-sandbox. The container is the isolation boundary. (The NO_SANDBOX
-      # env above isn't honored by the CDP profile launch; the wrapper is.)
-      - OPENCLAW_BROWSER_EXECUTABLE_PATH=/opt/ms-playwright/chrome-nosandbox.sh
       # Chromium comes from one shared read-only copy (see volumes) instead of a
       # ~1GB per-tenant install — this is what makes dozens of tenants fit on
       # one host's disk. Falls back to ./browser-cache if the shared dir is absent.
@@ -49,7 +44,11 @@ services:
     command:
       - /bin/bash
       - -lc
-      - "Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & if [ -n \"$$OPENCLAW_TELEMETRY_TOKEN\" ]; then ( while true; do npm_config_prefer_online=true timeout 86400 npx -y openclaw-telemetry@latest run; sleep 5; done >/tmp/telemetry.log 2>&1 & ); fi; exec node openclaw.mjs gateway"
+      # The stale-lock cleanup matters: `docker compose restart` keeps /tmp,
+      # a SIGKILLed Xvfb leaves .X99-lock behind, and the next Xvfb then
+      # refuses to start — silently breaking the headful browser until the
+      # container is recreated.
+      - "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 2>/dev/null; Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & if [ -n \"$$OPENCLAW_TELEMETRY_TOKEN\" ]; then ( while true; do npm_config_prefer_online=true timeout 86400 npx -y openclaw-telemetry@latest run; sleep 5; done >/tmp/telemetry.log 2>&1 & ); fi; exec node openclaw.mjs gateway"
     ports:
       # Gateway is only reachable from the host; front it with your reverse proxy.
       - "127.0.0.1:{{PORT}}:18789"
