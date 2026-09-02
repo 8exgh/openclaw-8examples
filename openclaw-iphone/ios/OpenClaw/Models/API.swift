@@ -25,10 +25,10 @@ struct ClawCard: Codable, Identifiable, Hashable {
         return "+1 (\(a)) \(b)-\(c)"
     }
 
-    /// "openclaw7" → "Claw 7"
+    /// An assigned service ID ending in "7" → "Assistant 7".
     var displayName: String {
         let digits = clawId.drop(while: { !$0.isNumber })
-        return digits.isEmpty ? clawId : "Claw \(digits)"
+        return digits.isEmpty ? "AI Assistant" : "Assistant \(digits)"
     }
 }
 

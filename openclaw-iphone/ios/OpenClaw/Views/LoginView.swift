@@ -12,12 +12,13 @@ struct LoginView: View {
             Form {
                 Section {
                     VStack(spacing: 8) {
-                        Image(systemName: "pawprint.circle.fill")
-                            .font(.system(size: 64))
-                            .foregroundStyle(.tint)
-                        Text("My Claw")
+                        Image("8ExamplesLogo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 72, height: 72)
+                        Text("8Examples AI Assistant")
                             .font(.largeTitle.bold())
-                        Text("Sign in with your claw’s username and password — the same ones you use at chat.8examples.com.")
+                        Text("Sign in with your AI assistant username and password — the same ones you use at chat.8examples.com.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -27,7 +28,7 @@ struct LoginView: View {
                 }
 
                 Section {
-                    TextField("Username (e.g. openclaw7)", text: $username)
+                    TextField("Username", text: $username)
                         .textContentType(.username)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -54,7 +55,7 @@ struct LoginView: View {
 
                 Section {
                     DisclosureGroup("Server", isExpanded: $showServer) {
-                        TextField("https://openclaw-iphone.fusenv.com", text: $model.serverURLString)
+                        TextField("https://8examples.com", text: $model.serverURLString)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .keyboardType(.URL)

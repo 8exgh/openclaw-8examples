@@ -135,7 +135,7 @@ struct MessageBubble: View {
                     if message.isOwner {
                         switch message.status {
                         case "awaiting-reply": Image(systemName: "clock")
-                        case "failed": Label("Couldn't reach your claw", systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+                        case "failed": Label("Couldn't reach your assistant", systemImage: "exclamationmark.triangle").foregroundStyle(.red)
                         default: Image(systemName: "checkmark")
                         }
                     }

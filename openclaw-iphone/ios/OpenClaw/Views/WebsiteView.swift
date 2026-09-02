@@ -55,7 +55,7 @@ struct WebsiteView: View {
                 }
 
                 Section("How to change it") {
-                    Text("Just tell \(claw.displayName) what to change, in plain words. It edits the site, and the change goes live within a couple of minutes. Tap a tip to use it:")
+                    Text("Just tell \(claw.displayName) what to change, in plain words. Your assistant edits the site, and the change goes live within a couple of minutes. Tap a tip to use it:")
                         .font(.footnote).foregroundStyle(.secondary)
                     ForEach(tips, id: \.self) { tip in
                         TipRow(text: tip) { draft = $0 }

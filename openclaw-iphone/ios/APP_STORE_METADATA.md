@@ -1,4 +1,4 @@
-# App Store metadata for My Claw
+# App Store metadata for 8Examples AI Assistant
 
 Everything App Store Connect asks for lives in `tools/submit.py` (categories,
 subtitle, description, keywords, URLs, age rating answers, review notes, demo
@@ -13,16 +13,16 @@ python3 tools/submit.py screenshots review                      # or single step
 | Field | Value |
 |---|---|
 | App record | https://appstoreconnect.apple.com/apps/6805721460 |
-| Bundle ID | `com.8examples.openclaw` (project) — must match the record |
-| Name | My Claw |
-| Subtitle | Talk to your OpenClaw assistant |
+| Bundle ID | `ai-assistant.8examples.com` (project) — must match the record |
+| Name | 8Examples AI Assistant |
+| Subtitle | Your AI assistant, everywhere |
 | Category | Productivity / Business |
 | Price | Free, no IAP |
-| Privacy policy | https://8examples.com/openclaw/privacy |
-| Terms | https://8examples.com/openclaw/terms (linked in description + review notes) |
-| Support | https://8examples.com/contact · Marketing: https://8examples.com/openclaw |
+| Privacy policy | https://8examples.com/privacy |
+| Terms | https://8examples.com/terms (linked in description + review notes) |
+| Support | https://8examples.com/contact · Marketing: https://8examples.com |
 | Age rating | 4+ (nothing declared) |
-| Demo account | openclaw1 (a live claw) |
+| Demo account | `openclaw1` (technical login for the live review assistant) |
 
 ## Not automatable (web UI only)
 
@@ -50,6 +50,6 @@ iPhone 17 Pro Max simulator (1320×2868):
 xcrun simctl create "MyClaw ProMax" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max com.apple.CoreSimulator.SimRuntime.iOS-26-0
 xcodebuild -project OpenClaw.xcodeproj -scheme OpenClaw -sdk iphonesimulator -configuration Release CODE_SIGNING_ALLOWED=NO -derivedDataPath build/dd build
 xcrun simctl install booted build/dd/Build/Products/Release-iphonesimulator/OpenClaw.app
-SIMCTL_CHILD_OPENCLAW_DEMO=1 SIMCTL_CHILD_OPENCLAW_DEMO_TAB=claws SIMCTL_CHILD_OPENCLAW_DEMO_SCREEN=chat xcrun simctl launch booted com.8examples.openclaw
+SIMCTL_CHILD_OPENCLAW_DEMO=1 SIMCTL_CHILD_OPENCLAW_DEMO_TAB=claws SIMCTL_CHILD_OPENCLAW_DEMO_SCREEN=chat xcrun simctl launch booted ai-assistant.8examples.com
 xcrun simctl io booted screenshot Screenshots/iphone-6.9/01-chat.png
 ```

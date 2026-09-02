@@ -23,7 +23,7 @@ struct MainTabView: View {
     var body: some View {
         TabView(selection: $tab) {
             ClawsView()
-                .tabItem { Label("Claws", systemImage: "bubble.left.and.bubble.right") }
+                .tabItem { Label("Assistants", systemImage: "bubble.left.and.bubble.right") }
                 .tag("claws")
             LocationView()
                 .tabItem { Label("Location", systemImage: "location") }
@@ -90,9 +90,9 @@ struct TipRow: View {
 struct EmptyClawsView: View {
     var body: some View {
         ContentUnavailableView(
-            "No claw assigned yet",
+            "No assistant assigned yet",
             systemImage: "questionmark.circle",
-            description: Text("Your account isn't linked to an OpenClaw assistant. Ask the operator to assign one.")
+            description: Text("Your account isn't linked to an 8Examples AI Assistant. Please contact 8Examples for help.")
         )
     }
 }

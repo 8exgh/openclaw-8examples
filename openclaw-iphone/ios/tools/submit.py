@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fill in the My Claw App Store Connect listing from the repo's metadata.
+"""Fill in the 8Examples AI Assistant App Store Connect listing.
 
 Idempotent: every step looks up what exists and creates/patches as needed,
 so it can be re-run after a partial failure. Requires the app record to exist
@@ -22,47 +22,48 @@ SCREENSHOT_DIR = os.path.join(IOS_DIR, "Screenshots", "iphone-6.9")
 SITE = "https://8examples.com"
 
 COPYRIGHT = "© 2026 8Examples"
-SUBTITLE = "Talk to your OpenClaw assistant"
-PROMO = ("Chat with your claw, share your location so it can help with what's near you, "
-         "and set up its phone number, website, Telegram bot and Alexa skill.")
-KEYWORDS = "openclaw,assistant,AI,claw,chat,phone,website,telegram,alexa,location,business,8examples"  # ≤100 chars
+APP_NAME = "8Examples AI Assistant"
+SUBTITLE = "Your AI assistant, everywhere"
+PROMO = ("Chat with your 8Examples AI Assistant, optionally share your location, "
+         "and connect its phone number, website, Telegram bot and Alexa skill.")
+KEYWORDS = "assistant,AI,chat,phone,website,telegram,alexa,location,business,productivity,8examples"  # ≤100 chars
 WHATS_NEW = "First release."
-DESCRIPTION = """My Claw is the companion app for your managed OpenClaw assistant from 8Examples: the AI worker that answers your texts, makes your phone calls, keeps your website current and handles your paperwork.
+DESCRIPTION = """8Examples AI Assistant is the companion app for your managed AI assistant from 8Examples. It helps answer texts, make phone calls, keep your website current and handle paperwork.
 
-Sign in with the same username and password you use for your claw's web chat. If you have more than one claw, they all show up.
+Sign in with the same username and password you use for web chat. If you have more than one assistant, they all show up.
 
-CHAT WITH YOUR CLAW
-One conversation per claw, right in the app. Ask it to check your messages, book an appointment, draft a reply or change your website. Replies arrive in the same thread, and your claw remembers what you talked about on the phone, on Telegram and on the web.
+CHAT WITH YOUR ASSISTANT
+One conversation per assistant, right in the app. Ask it to check your messages, book an appointment, draft a reply or change your website. Replies arrive in the same thread, and your assistant remembers what you discussed on the phone, on Telegram and on the web.
 
 LET IT KNOW WHERE YOU ARE (OPTIONAL)
-Say yes and your phone shares its location with your claw every five minutes, even in the background, so it can answer things like "what's open near me" or "text my ETA". Say no and it never asks again. Stop sharing at any time; the last position is forgotten.
+Say yes and your phone shares its location with your assistant every five minutes, even in the background, so it can answer things like "what's open near me" or "text my ETA". Say no and it never asks again. Stop sharing at any time; the last position is forgotten.
 
 YOUR WEBSITE
-See your domain and your fusenv.com address, open the live site in Safari, and tell your claw what to change in plain words. Edits go live within a couple of minutes.
+See your domain and your fusenv.com address, open the live site in Safari, and tell your assistant what to change in plain words. Edits go live within a couple of minutes.
 
-YOUR CLAW'S PHONE NUMBER
-Call or text your claw like a person. Tips show you what to ask for: "check my SMS every 15 minutes", "phone the clinic and reserve the next appointment", "call me while I drive".
+YOUR ASSISTANT'S PHONE NUMBER
+Call or text your assistant like a person. Tips show you what to ask for: "check my SMS every 15 minutes", "phone the clinic and reserve the next appointment", "call me while I drive".
 
 TELEGRAM AND ALEXA
-Step-by-step instructions to give your claw a Telegram bot, and to enable the "My Claw" Alexa skill so every Echo in the house can talk to it.
+Step-by-step instructions connect your assistant to a Telegram bot and the 8Examples AI Assistant Alexa skill.
 
-REQUIRES A MANAGED OPENCLAW SUBSCRIPTION
-My Claw only works with an assistant from 8examples.com/openclaw. The app itself is free.
+REQUIRES AN 8EXAMPLES MANAGED AI ASSISTANT
+This app works with an AI assistant service provided directly by 8Examples. The companion app itself is free.
 
 PRIVACY
-Your location is stored only if you say yes, only the most recent position is kept, and only your own claw can read it. Terms: 8examples.com/openclaw/terms. Privacy: 8examples.com/openclaw/privacy."""
+Your location is stored only if you say yes, only the most recent position is kept, and only your own assigned assistant can read it. Terms: 8examples.com/terms. Privacy: 8examples.com/privacy."""
 
-REVIEW_NOTES = """My Claw is the companion app for a paid, managed AI assistant ("claw") sold at https://8examples.com/openclaw. Every customer gets one assistant running on our servers; this app lets them talk to it and configure it. There is nothing to buy in the app.
+REVIEW_NOTES = """8Examples AI Assistant is the companion app for a paid, managed AI assistant service provided directly by 8Examples Inc. Every customer gets an assistant running on our servers; this app lets them communicate with it and configure related services. There is nothing to buy in the app.
 
 DEMO ACCOUNT (a live assistant reserved for review):
     Username: openclaw1
     Password: v6WwpzrfmBtdrm
 
-Sign in on the first screen. The Claws tab opens a chat with the assistant; send any message ("what can you do?") and a reply appears within about 15 seconds. The Website, Phone and Connect tabs show that assistant's website address, phone number and set-up guides, each with the same chat underneath.
+Sign in on the first screen. The Assistants tab opens a chat; send any message ("what can you do?") and a reply appears within about 15 seconds. The Website, Phone and Connect tabs show that assistant's website address, phone number and setup guides, each with the same chat underneath.
 
 LOCATION: the Location tab asks whether the assistant may know where the user is. Tapping Yes records consent on our server and then requests iOS location permission (When In Use, then Always). While consent is on, the app posts the phone's coordinates to https://8examples.com every 5 minutes, including in the background (UIBackgroundModes: location), so the assistant can answer questions like "what's open near me". The user can stop at any time from the same tab, which revokes consent and discards the last position. Location is never used for advertising or shared with anyone but the user's own assistant. You can test with a simulated location; nothing else in the app depends on it.
 
-Links: privacy https://8examples.com/openclaw/privacy, terms https://8examples.com/openclaw/terms, support https://8examples.com/contact. The Alexa page links to our published "My Claw" skill in the Amazon Alexa app; the Telegram page links to Telegram's BotFather."""
+Links: privacy https://8examples.com/privacy, terms https://8examples.com/terms, support https://8examples.com/contact. The Alexa page links to the 8Examples AI Assistant skill in the Amazon Alexa app; the Telegram page links to Telegram's BotFather."""
 
 REVIEW_CONTACT = {
     "contactFirstName": os.environ.get("ASC_CONTACT_FIRST", "Sean"),
@@ -125,7 +126,7 @@ def step_info(a):
     }}})
     log("  categories: Productivity / Business")
     locs = asc.get(f"/v1/appInfos/{info['id']}/appInfoLocalizations")["data"]
-    attrs = {"subtitle": SUBTITLE, "privacyPolicyUrl": f"{SITE}/openclaw/privacy"}
+    attrs = {"name": APP_NAME, "subtitle": SUBTITLE, "privacyPolicyUrl": f"{SITE}/privacy"}
     en = next((l for l in locs if l["attributes"]["locale"] == "en-US"), None)
     if en:
         patch("appInfoLocalizations", en["id"], attrs)
@@ -138,7 +139,7 @@ def step_info(a):
         log("  content rights: no third-party content")
     except SystemExit as e:
         log("  (content rights not set:", str(e).splitlines()[0], ")")
-    # Custom EULA: the OpenClaw terms from the website.
+    # Custom terms are linked in the description and review notes.
     try:
         eulas = asc.get(f"/v1/apps/{a['id']}/endUserLicenseAgreement").get("data")
     except SystemExit:
@@ -153,7 +154,7 @@ def step_version(a):
     patch("appStoreVersions", v["id"], {"copyright": COPYRIGHT, "releaseType": "AFTER_APPROVAL"})
     locs = asc.get(f"/v1/appStoreVersions/{v['id']}/appStoreVersionLocalizations")["data"]
     attrs = {"description": DESCRIPTION, "keywords": KEYWORDS, "promotionalText": PROMO,
-             "supportUrl": f"{SITE}/contact", "marketingUrl": f"{SITE}/openclaw"}
+             "supportUrl": f"{SITE}/contact", "marketingUrl": SITE}
     if v["attributes"]["versionString"] != "1.0":
         attrs["whatsNew"] = WHATS_NEW
     en = next((l for l in locs if l["attributes"]["locale"] == "en-US"), None)
@@ -285,6 +286,32 @@ def step_build(a):
     raise SystemExit("gave up waiting for a processed build")
 
 
+
+def step_pricing(a):
+    log("== pricing (Free)")
+    # Free = the $0.00 app price point in the USA base territory.
+    try:
+        sched = asc.get(f"/v1/apps/{a['id']}/appPriceSchedule").get("data")
+    except SystemExit:
+        sched = None
+    if sched:
+        log("  price schedule already set")
+        return
+    pts = asc.get_all(f"/v1/apps/{a['id']}/appPricePoints", **{"filter[territory]": "USA", "limit": 200})
+    free = next((p for p in pts if float(p["attributes"].get("customerPrice", "0") or 0) == 0.0), None)
+    if not free:
+        # Fall back to the cheapest tier if a true $0 point is not listed.
+        free = min(pts, key=lambda p: float(p["attributes"].get("customerPrice", "999") or 999))
+    asc.post("/v1/appPriceSchedules", {
+        "data": {"type": "appPriceSchedules", "relationships": {
+            "app": {"data": {"type": "apps", "id": a["id"]}},
+            "baseTerritory": {"data": {"type": "territories", "id": "USA"}},
+            "manualPrices": {"data": [{"type": "appPrices", "id": "${p}"}]}}},
+        "included": [{"type": "appPrices", "id": "${p}", "attributes": {"startDate": None},
+                      "relationships": {"appPricePoint": {"data": {"type": "appPricePoints", "id": free["id"]}}}}]})
+    log(f"  set price to {free['attributes'].get('customerPrice')} (Free)")
+
+
 def step_submit(a):
     log("== submit for review")
     v = version(a["id"])
@@ -308,7 +335,7 @@ def step_submit(a):
 
 
 STEPS = {"info": step_info, "version": step_version, "rating": step_rating, "screenshots": step_screenshots,
-         "review": step_review, "build": step_build, "submit": step_submit}
+         "review": step_review, "pricing": step_pricing, "build": step_build, "submit": step_submit}
 
 if __name__ == "__main__":
     which = sys.argv[1:] or ["all"]

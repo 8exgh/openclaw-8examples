@@ -14,8 +14,8 @@ enum AppConfig {
     /// Where people log in on the web with the same credentials.
     static let webChatURL = URL(string: "https://chat.8examples.com")!
 
-    /// The "My Claw" Alexa skill (Productivity). Store URL matches openclaw.alexaSkill.storeUrl in 8examples (websites/config.ts).
+    /// The 8Examples AI Assistant Alexa skill (Productivity).
     static let alexaSkillStoreURL = URL(string: "https://www.amazon.ca/dp/B0HGFRKMYG")!
     static let alexaAppURL = URL(string: "alexa://")!
-    static let alexaSkillName = "My Claw"
+    static let alexaSkillName = "8Examples AI Assistant"
 }

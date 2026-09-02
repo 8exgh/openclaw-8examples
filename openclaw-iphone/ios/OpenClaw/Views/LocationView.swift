@@ -12,9 +12,9 @@ struct LocationView: View {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Can your claws know where you are?")
+                        Text("Can your assistants know where you are?")
                             .font(.headline)
-                        Text("If you say yes, this phone sends its latitude and longitude to your claws every 5 minutes — even in the background. Your claws use it for things like \"what's open near me\", \"how far am I from home\", or \"text my wife my ETA\".")
+                        Text("If you say yes, this phone sends its latitude and longitude to your assigned assistants every 5 minutes — even in the background. They use it for things like \"what's open near me\", \"how far am I from home\", or \"text my wife my ETA\".")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                         Text(clawNames)
@@ -41,7 +41,7 @@ struct LocationView: View {
                         permissionRow
                     }
 
-                    Section("Last sent to your claws") {
+                    Section("Last sent to your assistants") {
                         if let latest = model.locationSharing?.latest {
                             Map(initialPosition: .region(MKCoordinateRegion(
                                 center: CLLocationCoordinate2D(latitude: latest.latitude, longitude: latest.longitude),
@@ -56,7 +56,7 @@ struct LocationView: View {
                                 LabeledContent("Accuracy", value: "±\(Int(acc)) m")
                             }
                             if model.locationSharing?.lapsed == true {
-                                Label("Your claws see this as stale — no update in over 15 minutes.", systemImage: "exclamationmark.triangle")
+                                Label("Your assistants see this as stale — no update in over 15 minutes.", systemImage: "exclamationmark.triangle")
                                     .font(.footnote).foregroundStyle(.orange)
                             }
                         } else {
@@ -71,7 +71,7 @@ struct LocationView: View {
                 }
 
                 Section("Privacy") {
-                    Text("Only your own claws can ask for your location, and only the most recent position is kept. Say no or stop sharing at any time and the last position is forgotten.")
+                    Text("Only your own assigned assistants can ask for your location, and only the most recent position is kept. Say no or stop sharing at any time and the last position is forgotten.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -84,7 +84,7 @@ struct LocationView: View {
     private var clawNames: String {
         let names = model.claws.map(\.displayName)
         switch names.count {
-        case 0: return "No claw assigned yet."
+        case 0: return "No assistant assigned yet."
         case 1: return "Shared with \(names[0])."
         default: return "Shared with \(names.joined(separator: ", "))."
         }
@@ -100,7 +100,7 @@ struct LocationView: View {
             Button("Allow Always…") { model.location.requestPermission() }
             openSettingsButton
         case .denied, .restricted:
-            Label("Location access is off for My Claw", systemImage: "xmark.circle").foregroundStyle(.red)
+            Label("Location access is off for 8Examples AI Assistant", systemImage: "xmark.circle").foregroundStyle(.red)
             openSettingsButton
         default:
             Button("Allow location access…") { model.location.requestPermission() }
