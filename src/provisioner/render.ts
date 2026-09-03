@@ -173,14 +173,15 @@ export function buildOpenclawConfig(
         ...(tenant.agentTimeoutSeconds ? { timeoutSeconds: tenant.agentTimeoutSeconds } : {}),
         model: opts.modelGatewayUrl
           ? {
-              // The gateway already encapsulates the whole opus→opus→kimi→
-              // minimax chain; the direct kimi/minimax fallbacks below only
-              // matter if the gateway container itself is down.
+              // Gateway tenants are gateway-ONLY: it already encapsulates the
+              // whole opus→opus→kimi→minimax chain, and the claw holds no
+              // direct provider credentials at all (they are escrowed by
+              // renderEnv), so a compromised claw cannot burn the fleet's
+              // subscriptions directly. If the gateway container is down the
+              // claw has no model — run two gateway instances if that ever
+              // becomes a real concern.
               primary: 'gateway/claude-opus-4-8',
-              fallbacks: [
-                'kimi/k3',
-                ...(opts.minimaxReady ? ['minimax/MiniMax-M3'] : []),
-              ],
+              fallbacks: ['gateway/claude-sonnet-5'],
             }
           : {
               primary: 'anthropic/claude-opus-4-8',
@@ -313,53 +314,62 @@ export function buildOpenclawConfig(
               },
             }
           : {}),
-        kimi: {
-          // K3 is the general flagship model available to the fleet's Kimi
-          // subscription. Do not add the coding-tuned `kimi-for-coding` model.
-          baseUrl: 'https://api.kimi.com/coding/v1',
-          apiKey: '${KIMI_API_KEY}',
-          api: 'openai-completions',
-          models: [
-            {
-              id: 'k3',
-              name: 'Kimi K3',
-              reasoning: true,
-              input: ['text', 'image'],
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-              contextWindow: 1048576,
-              maxTokens: 131072,
-            },
-          ],
-        },
-        ...(opts.minimaxReady
-          ? {
-              minimax: {
-                baseUrl: 'https://api.minimax.io/anthropic',
-                apiKey: '${MINIMAX_API_KEY}',
-                api: 'anthropic-messages',
+        // Direct providers exist only OFF the gateway: gateway tenants hold no
+        // provider credentials, so rendering these entries there would just
+        // register providers that can never authenticate.
+        ...(opts.modelGatewayUrl
+          ? {}
+          : {
+              kimi: {
+                // K3 is the general flagship model available to the fleet's Kimi
+                // subscription. Do not add the coding-tuned `kimi-for-coding` model.
+                baseUrl: 'https://api.kimi.com/coding/v1',
+                apiKey: '${KIMI_API_KEY}',
+                api: 'openai-completions',
                 models: [
                   {
-                    id: 'MiniMax-M3',
-                    name: 'MiniMax M3',
+                    id: 'k3',
+                    name: 'Kimi K3',
                     reasoning: true,
                     input: ['text', 'image'],
-                    cost: { input: 0.6, output: 2.4, cacheRead: 0.12, cacheWrite: 0 },
-                    contextWindow: 1000000,
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                    contextWindow: 1048576,
                     maxTokens: 131072,
                   },
                 ],
               },
-            }
-          : {}),
+              ...(opts.minimaxReady
+                ? {
+                    minimax: {
+                      baseUrl: 'https://api.minimax.io/anthropic',
+                      apiKey: '${MINIMAX_API_KEY}',
+                      api: 'anthropic-messages',
+                      models: [
+                        {
+                          id: 'MiniMax-M3',
+                          name: 'MiniMax M3',
+                          reasoning: true,
+                          input: ['text', 'image'],
+                          cost: { input: 0.6, output: 2.4, cacheRead: 0.12, cacheWrite: 0 },
+                          contextWindow: 1000000,
+                          maxTokens: 131072,
+                        },
+                      ],
+                    },
+                  }
+                : {}),
+            }),
       },
     },
     auth: {
-      profiles: {
-        'kimi:manual': { provider: 'kimi', mode: 'api_key' },
-        ...(opts.minimaxReady
-          ? { 'minimax:manual': { provider: 'minimax', mode: 'api_key' } }
-          : {}),
-      },
+      profiles: opts.modelGatewayUrl
+        ? {}
+        : {
+            'kimi:manual': { provider: 'kimi', mode: 'api_key' },
+            ...(opts.minimaxReady
+              ? { 'minimax:manual': { provider: 'minimax', mode: 'api_key' } }
+              : {}),
+          },
     },
   };
 
@@ -407,20 +417,35 @@ function renderEnv(tenant: Tenant, dir: string): string[] {
   };
 
   ensure('OPENCLAW_GATEWAY_TOKEN', randomBytes(24).toString('hex'));
-  if (tenant.modelAccess === 'suppressed') {
-    // MODEL_GATEWAY_KEY funds model calls like the direct keys do, so it is
-    // escrowed with them — but it is per-tenant (minted on the gateway box),
-    // so it is never inherited from the control plane's environment.
-    for (const key of [...MODEL_CREDENTIAL_KEYS, 'MODEL_GATEWAY_KEY']) {
+  const gatewayKey = env.get('MODEL_GATEWAY_KEY') ?? escrow.get('MODEL_GATEWAY_KEY');
+  const gatewayLive =
+    tenant.modelAccess !== 'suppressed' && !!tenant.modelGatewayUrl && !!gatewayKey && gatewayKey !== 'changeme';
+  const escrowKeys = (keys: string[]): void => {
+    for (const key of keys) {
       const value = env.get(key);
       if (value && value !== 'changeme') escrow.set(key, value);
       else if (key !== 'MODEL_GATEWAY_KEY') {
+        // Direct keys are fleet-shared and may be inherited from the control
+        // plane env; the gateway key is per-tenant (minted on the gateway box)
+        // and never inherited.
         const inherited = process.env[key];
         if (inherited && inherited !== 'changeme') escrow.set(key, inherited);
       }
       env.delete(key);
     }
     writeFileSync(escrowFile, [...escrow].map(([key, value]) => `${key}=${value}`).join('\n') + '\n', { mode: 0o600 });
+  };
+  if (tenant.modelAccess === 'suppressed') {
+    // MODEL_GATEWAY_KEY funds model calls like the direct keys do, so
+    // suppressed inventory escrows it with them.
+    escrowKeys([...MODEL_CREDENTIAL_KEYS, 'MODEL_GATEWAY_KEY']);
+  } else if (gatewayLive) {
+    // Gateway tenants are gateway-only: the claw keeps just its minted
+    // per-tenant key, and the fleet's direct subscription credentials move to
+    // escrow (restored automatically by the branch below if the tenant is
+    // ever taken off the gateway).
+    escrowKeys([...MODEL_CREDENTIAL_KEYS]);
+    ensure('MODEL_GATEWAY_KEY', gatewayKey);
   } else {
     for (const key of MODEL_CREDENTIAL_KEYS) ensure(key, escrow.get(key) ?? process.env[key] ?? 'changeme');
     if (tenant.modelGatewayUrl) ensure('MODEL_GATEWAY_KEY', escrow.get('MODEL_GATEWAY_KEY') ?? 'changeme');
@@ -530,15 +555,24 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     searchKeyReady('MINIMAX_API_KEY') ||
     (existsSync(escrowFile) && parseEnv(readFileSync(escrowFile, 'utf8')).get('MINIMAX_API_KEY') !== undefined)
   );
-  // Model-gateway cutover requires BOTH the tenant flag and a minted key
-  // already in .env — with only the flag set, the render stays on direct
-  // provider wiring (and reports MODEL_GATEWAY_KEY as a missing credential)
-  // instead of pointing the primary model at a gateway that would 401.
-  const gatewayKey = existsSync(envFile)
+  // Model-gateway cutover for an ASSIGNED tenant requires BOTH the tenant
+  // flag and a minted key already in .env — with only the flag set, the
+  // render stays on direct provider wiring (and reports MODEL_GATEWAY_KEY as
+  // a missing credential) instead of pointing the primary model at a gateway
+  // that would 401. SUPPRESSED inventory renders the gateway shape from the
+  // flag alone: it cannot consume either way (no key, runtime kept down), and
+  // this guarantees an unassigned claw's only possible model path is the
+  // gateway — its key is minted into escrow and restored on assignment.
+  const envKey = existsSync(envFile)
     ? parseEnv(readFileSync(envFile, 'utf8')).get('MODEL_GATEWAY_KEY')
     : undefined;
+  const escrowKey = existsSync(escrowFile)
+    ? parseEnv(readFileSync(escrowFile, 'utf8')).get('MODEL_GATEWAY_KEY')
+    : undefined;
+  const gatewayKey = envKey && envKey !== 'changeme' ? envKey : escrowKey;
   const modelGatewayReady =
-    tenant.modelAccess !== 'suppressed' && !!tenant.modelGatewayUrl && !!gatewayKey && gatewayKey !== 'changeme';
+    !!tenant.modelGatewayUrl &&
+    (tenant.modelAccess === 'suppressed' || (!!gatewayKey && gatewayKey !== 'changeme'));
 
   // OpenClaw writes config provenance metadata and restores its last-known-good
   // backup during shutdown when that metadata suddenly disappears. Preserve it
