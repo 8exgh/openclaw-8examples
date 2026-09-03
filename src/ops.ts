@@ -145,6 +145,30 @@ export function pinTenantImage(
   return applyTenant(tenant, opts);
 }
 
+/**
+ * Route a tenant's model calls through the shared model-gateway (or back off
+ * it with null). The render only cuts the tenant over once a real
+ * MODEL_GATEWAY_KEY is in its .env — setting the URL first and minting the
+ * key second is therefore safe; re-apply after installing the key.
+ */
+export function setModelGateway(
+  tenantId: string,
+  url: string | null,
+  opts: { start?: boolean } = {},
+): ApplyResult {
+  const tenant = getTenant(tenantId);
+  if (url === null) {
+    delete tenant.modelGatewayUrl;
+  } else {
+    if (!/^https?:\/\//.test(url)) {
+      throw new Error(`model-gateway url must be http(s), got: ${url}`);
+    }
+    tenant.modelGatewayUrl = url.replace(/\/+$/, '');
+  }
+  upsertTenant(tenant);
+  return applyTenant(tenant, opts);
+}
+
 /** Record the sales system's authoritative assignment state. */
 export function setModelAccess(tenantId: string, assigned: boolean, opts: { start?: boolean } = {}): ApplyResult {
   const tenant = getTenant(tenantId);
@@ -427,6 +451,8 @@ export interface TenantSummary {
   capabilities: Record<string, boolean>;
   /** Set when the tenant runs a release pinned apart from the fleet. */
   pinnedImageRef?: string;
+  /** Set when the tenant's model calls route through the shared model-gateway. */
+  modelGatewayUrl?: string;
   managedVersion?: string;
   upToDate: boolean;
   nudges: number;
@@ -447,6 +473,7 @@ export function summarize(tenant: Tenant): TenantSummary {
       Object.entries(tenant.capabilities).map(([id, s]) => [id, !!s?.enabled]),
     ),
     pinnedImageRef: tenant.pinnedImageRef,
+    modelGatewayUrl: tenant.modelGatewayUrl,
     managedVersion: tenant.applied?.managedVersion,
     upToDate: tenant.applied?.managedVersion === current,
     nudges: tenant.nudgeLog.length,

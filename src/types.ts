@@ -81,6 +81,16 @@ export interface Tenant {
   createdAt: string;
   /** Per-tenant release pin (e.g. canarying a major upgrade); overrides the fleet pin until cleared. */
   pinnedImageRef?: string;
+  /**
+   * Route this tenant's Anthropic-protocol model calls through the shared
+   * model-gateway (github.com/8exgh/model-gateway) at this URL, e.g.
+   * http://model-gateway:8790 on the openclaw-model-gateway docker network.
+   * The cutover only takes effect once the tenant's .env holds a real
+   * MODEL_GATEWAY_KEY (minted on the gateway box); until then the render
+   * keeps the direct provider wiring so a half-configured tenant never
+   * loses its models.
+   */
+  modelGatewayUrl?: string;
   /** Provider credentials are available only after 8examples assigns this inventory slot. */
   modelAccess?: 'assigned' | 'suppressed';
   capabilities: Partial<Record<CapabilityId, CapabilityState>>;

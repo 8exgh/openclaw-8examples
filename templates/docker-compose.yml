@@ -7,6 +7,7 @@ services:
     restart: unless-stopped
     init: true
     env_file: .env
+{{MODEL_GATEWAY_NETWORKS_SERVICE}}
     # Explicit resolvers. The host runs systemd-resolved, so its
     # /etc/resolv.conf points at the 127.0.0.53 stub — inside a container that
     # is the container's OWN loopback, where nothing listens, and every model
@@ -74,3 +75,4 @@ services:
     cpus: "{{CPUS}}"
     pids_limit: {{PIDS_LIMIT}}
     shm_size: 1g # Chrome dies on Docker's 64m default
+{{MODEL_GATEWAY_NETWORKS_TOP}}

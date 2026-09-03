@@ -143,6 +143,8 @@ export function buildOpenclawConfig(
     moonshotSearchReady?: boolean;
     braveSearchReady?: boolean;
     minimaxReady?: boolean;
+    /** Set to the gateway URL once the tenant's MODEL_GATEWAY_KEY is real. */
+    modelGatewayUrl?: string;
   } = {},
 ): Record<string, unknown> {
   let config: Record<string, unknown> = {
@@ -169,18 +171,29 @@ export function buildOpenclawConfig(
       defaults: {
         workspace: '/home/node/.openclaw/workspace',
         ...(tenant.agentTimeoutSeconds ? { timeoutSeconds: tenant.agentTimeoutSeconds } : {}),
-        model: {
-          primary: 'anthropic/claude-opus-4-8',
-          // Authentication is installed separately in each tenant's persisted
-          // auth store. Never clone a ChatGPT OAuth refresh token across the
-          // fleet: refresh-token rotation would make the tenants invalidate
-          // one another's credentials.
-          fallbacks: [
-            'openai/gpt-5.6-sol',
-            'kimi/k3',
-            ...(opts.minimaxReady ? ['minimax/MiniMax-M3'] : []),
-          ],
-        },
+        model: opts.modelGatewayUrl
+          ? {
+              // The gateway already encapsulates the whole opus→opus→kimi→
+              // minimax chain; the direct kimi/minimax fallbacks below only
+              // matter if the gateway container itself is down.
+              primary: 'gateway/claude-opus-4-8',
+              fallbacks: [
+                'kimi/k3',
+                ...(opts.minimaxReady ? ['minimax/MiniMax-M3'] : []),
+              ],
+            }
+          : {
+              primary: 'anthropic/claude-opus-4-8',
+              // Authentication is installed separately in each tenant's persisted
+              // auth store. Never clone a ChatGPT OAuth refresh token across the
+              // fleet: refresh-token rotation would make the tenants invalidate
+              // one another's credentials.
+              fallbacks: [
+                'openai/gpt-5.6-sol',
+                'kimi/k3',
+                ...(opts.minimaxReady ? ['minimax/MiniMax-M3'] : []),
+              ],
+            },
         heartbeat: { every: heartbeatEvery(tenant.id), target: 'last' },
         // Container tier: the container IS the isolation boundary, and there's
         // no Docker inside it — non-main/all would need Docker-in-Docker and
@@ -265,6 +278,41 @@ export function buildOpenclawConfig(
     models: {
       mode: 'merge',
       providers: {
+        // The shared model-gateway (github.com/8exgh/model-gateway) fronts the
+        // fleet's whole subscription chain behind the Anthropic protocol. It is
+        // a distinct provider (not an anthropic baseUrl override) so the
+        // tenant's stored anthropic auth profiles can never shadow the
+        // per-tenant gateway key — profile-store credentials outrank a
+        // provider's configured apiKey.
+        ...(opts.modelGatewayUrl
+          ? {
+              gateway: {
+                baseUrl: opts.modelGatewayUrl,
+                apiKey: '${MODEL_GATEWAY_KEY}',
+                api: 'anthropic-messages',
+                models: [
+                  {
+                    id: 'claude-opus-4-8',
+                    name: 'Claude Opus 4.8 (via model-gateway)',
+                    reasoning: true,
+                    input: ['text', 'image'],
+                    cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+                    contextWindow: 200000,
+                    maxTokens: 32000,
+                  },
+                  {
+                    id: 'claude-sonnet-5',
+                    name: 'Claude Sonnet 5 (via model-gateway)',
+                    reasoning: true,
+                    input: ['text', 'image'],
+                    cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+                    contextWindow: 200000,
+                    maxTokens: 64000,
+                  },
+                ],
+              },
+            }
+          : {}),
         kimi: {
           // K3 is the general flagship model available to the fleet's Kimi
           // subscription. Do not add the coding-tuned `kimi-for-coding` model.
@@ -360,10 +408,13 @@ function renderEnv(tenant: Tenant, dir: string): string[] {
 
   ensure('OPENCLAW_GATEWAY_TOKEN', randomBytes(24).toString('hex'));
   if (tenant.modelAccess === 'suppressed') {
-    for (const key of MODEL_CREDENTIAL_KEYS) {
+    // MODEL_GATEWAY_KEY funds model calls like the direct keys do, so it is
+    // escrowed with them — but it is per-tenant (minted on the gateway box),
+    // so it is never inherited from the control plane's environment.
+    for (const key of [...MODEL_CREDENTIAL_KEYS, 'MODEL_GATEWAY_KEY']) {
       const value = env.get(key);
       if (value && value !== 'changeme') escrow.set(key, value);
-      else {
+      else if (key !== 'MODEL_GATEWAY_KEY') {
         const inherited = process.env[key];
         if (inherited && inherited !== 'changeme') escrow.set(key, inherited);
       }
@@ -372,6 +423,7 @@ function renderEnv(tenant: Tenant, dir: string): string[] {
     writeFileSync(escrowFile, [...escrow].map(([key, value]) => `${key}=${value}`).join('\n') + '\n', { mode: 0o600 });
   } else {
     for (const key of MODEL_CREDENTIAL_KEYS) ensure(key, escrow.get(key) ?? process.env[key] ?? 'changeme');
+    if (tenant.modelGatewayUrl) ensure('MODEL_GATEWAY_KEY', escrow.get('MODEL_GATEWAY_KEY') ?? 'changeme');
   }
   // Fleet call-home telemetry (openclaw-telemetry on npm): the token is
   // inherited from the control plane's environment at render time; when
@@ -478,6 +530,15 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     searchKeyReady('MINIMAX_API_KEY') ||
     (existsSync(escrowFile) && parseEnv(readFileSync(escrowFile, 'utf8')).get('MINIMAX_API_KEY') !== undefined)
   );
+  // Model-gateway cutover requires BOTH the tenant flag and a minted key
+  // already in .env — with only the flag set, the render stays on direct
+  // provider wiring (and reports MODEL_GATEWAY_KEY as a missing credential)
+  // instead of pointing the primary model at a gateway that would 401.
+  const gatewayKey = existsSync(envFile)
+    ? parseEnv(readFileSync(envFile, 'utf8')).get('MODEL_GATEWAY_KEY')
+    : undefined;
+  const modelGatewayReady =
+    tenant.modelAccess !== 'suppressed' && !!tenant.modelGatewayUrl && !!gatewayKey && gatewayKey !== 'changeme';
 
   // OpenClaw writes config provenance metadata and restores its last-known-good
   // backup during shutdown when that metadata suddenly disappears. Preserve it
@@ -504,6 +565,7 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     moonshotSearchReady,
     braveSearchReady,
     minimaxReady,
+    modelGatewayUrl: modelGatewayReady ? tenant.modelGatewayUrl : undefined,
   });
   Object.assign(renderedConfig, preserved);
 
@@ -512,6 +574,11 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     JSON.stringify(renderedConfig, null, 2) + '\n',
   );
 
+  // Joining the shared gateway network keys off the tenant FLAG (not full key
+  // readiness) so the operator can reach the gateway from inside the claw
+  // container before cutover. It is deliberate opt-in either way: compose up
+  // fails hard if the external network does not exist on the box.
+  const joinGatewayNetwork = !!tenant.modelGatewayUrl && tenant.tier !== 'desktop';
   writeFileSync(
     path.join(dir, 'docker-compose.yml'),
     template('docker-compose.yml', {
@@ -521,6 +588,12 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
       MEM_LIMIT: asDockerMem(res.memoryGb),
       CPUS: String(res.cpus),
       PIDS_LIMIT: String(res.pidsLimit),
+      MODEL_GATEWAY_NETWORKS_SERVICE: joinGatewayNetwork
+        ? '    networks:\n      - default\n      - model-gateway'
+        : '',
+      MODEL_GATEWAY_NETWORKS_TOP: joinGatewayNetwork
+        ? 'networks:\n  default: {}\n  model-gateway:\n    external: true\n    name: openclaw-model-gateway'
+        : '',
     }),
   );
 

@@ -11,7 +11,7 @@ import {
   tailscaleOnline,
   tenantTag,
 } from './egress.js';
-import { applyOpenAIAuth, applyTenant, offboardTenant, pinTenantImage, runNudge, runNudgesAll, setAgentTimeout, setCapability, setModelAccess, signup, summarize, syncModelAccess, updateFleet } from './ops.js';
+import { applyOpenAIAuth, applyTenant, offboardTenant, pinTenantImage, runNudge, runNudgesAll, setAgentTimeout, setCapability, setModelAccess, setModelGateway, signup, summarize, syncModelAccess, updateFleet } from './ops.js';
 import { managedVersion } from './provisioner/render.js';
 import { renderSeed } from './provisioner/seed.js';
 import { getTenant, loadFleet, loadTenants, tenantDir } from './store.js';
@@ -77,6 +77,11 @@ Usage: npm run cli -- <command> [args]
                                 upgrade). Fleet updates leave the pin alone.
   pin <tenant> --fleet          Return the tenant to the fleet release — mind
                                 one-way migrations before pinning backwards
+  model-gateway <tenant> <url>  Route the tenant's model calls through the
+                                shared model-gateway (e.g. http://model-gateway:8790).
+                                Takes effect once a minted MODEL_GATEWAY_KEY is
+                                in the tenant's .env; re-run apply after adding it.
+  model-gateway <tenant> --off  Back to direct provider wiring (instant rollback)
   set-timeout <tenant> <seconds>
                                 Set interactive agent timeout (60-3600) + restart
   apply-openai <tenant> <credential-file>
@@ -170,7 +175,7 @@ async function main(): Promise<void> {
       for (const t of loadTenants()) {
         const s = summarize(t);
         const caps = Object.entries(s.capabilities).filter(([, on]) => on).map(([id]) => id).join(',');
-        console.log(`${s.id}\t${s.channel}\tport ${s.gatewayPort}\t[${caps}]\t${s.container}${s.egress ? `\tvia ${s.egress}` : ''}${s.pinnedImageRef ? `\t(pinned ${shortRef(s.pinnedImageRef)})` : ''}${s.upToDate ? '' : '\t(update pending)'}${s.offboarded ? '\t(offboarded)' : ''}`);
+        console.log(`${s.id}\t${s.channel}\tport ${s.gatewayPort}\t[${caps}]\t${s.container}${s.egress ? `\tvia ${s.egress}` : ''}${s.pinnedImageRef ? `\t(pinned ${shortRef(s.pinnedImageRef)})` : ''}${s.modelGatewayUrl ? '\t(model-gateway)' : ''}${s.upToDate ? '' : '\t(update pending)'}${s.offboarded ? '\t(offboarded)' : ''}`);
       }
       break;
     }
@@ -208,6 +213,28 @@ async function main(): Promise<void> {
           ? `${tenantId}: back on the fleet release`
           : `${tenantId}: pinned to ${result.tenant.pinnedImageRef}`,
       );
+      reportApply(result);
+      break;
+    }
+    case 'model-gateway': {
+      const [tenantId, url] = positional;
+      const off = flags.has('off');
+      if (!tenantId || (!url && !off)) {
+        throw new Error('Usage: model-gateway <tenant> <url> | model-gateway <tenant> --off');
+      }
+      const result = setModelGateway(tenantId, off ? null : url, { start });
+      if (off) {
+        console.log(`${tenantId}: model calls back on direct provider wiring`);
+      } else {
+        const key = result.missingEnv.includes('MODEL_GATEWAY_KEY');
+        console.log(`${tenantId}: model-gateway set to ${result.tenant.modelGatewayUrl}`);
+        if (key) {
+          console.log(
+            `  NOT live yet: mint a key on the gateway box and put it in ` +
+              `tenants/${tenantId}/.env as MODEL_GATEWAY_KEY, then run apply ${tenantId}`,
+          );
+        }
+      }
       reportApply(result);
       break;
     }
@@ -267,7 +294,7 @@ async function main(): Promise<void> {
       console.log(`release: ${fleet.pinnedImageRef ?? fleet.image} | managed: ${managedVersion()} | tenants: ${loadTenants().length}`);
       for (const t of loadTenants()) {
         const s = summarize(t);
-        console.log(`  ${s.id}: ${s.container}${s.pinnedImageRef ? ` (pinned ${shortRef(s.pinnedImageRef)})` : ''}${s.upToDate ? '' : ' (update pending)'}`);
+        console.log(`  ${s.id}: ${s.container}${s.pinnedImageRef ? ` (pinned ${shortRef(s.pinnedImageRef)})` : ''}${s.modelGatewayUrl ? ' (model-gateway)' : ''}${s.upToDate ? '' : ' (update pending)'}`);
       }
       break;
     }
