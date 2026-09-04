@@ -129,7 +129,7 @@ You can send and receive SMS from this person's dedicated assistant number.
   },
   {
     id: 'phone',
-    label: 'Phone calls',
+    label: 'Phone calls and SMS',
     tagline: 'I make the calls you dread — bookings, support lines, hold music and all.',
     priority: 4,
     env: [
@@ -176,8 +176,29 @@ EVERY request to the gateway must send your token:
 (add it to each curl below; examples omit it for brevity).
 
 Your account is bound to ONE phone number, used automatically for all calls
-and texts (never pass "from"). If you have no number yet, register one once
-— it falls back to same-city overlay area codes when yours is dry:
+and texts (never pass "from"). SMS is included in this capability; it does
+not need a separate SMS upgrade or Twilio credentials.
+
+## Your existing number — check before answering or provisioning
+
+Your main instructions may include a verified number from \`phone/account.json\`.
+The authenticated gateway is the source of truth. If your number is unknown,
+or the owner asks whether it is still connected, check it with this read-only
+request BEFORE saying you have no number or offering to register one:
+
+    curl --fail-with-body --silent --show-error --max-time 15 "$PHONE_GATEWAY_URL/numbers" \\
+      -H "Authorization: Bearer $PHONE_GATEWAY_API_KEY"
+
+The response is an array of your own numbers; use its \`phoneNumber\` field.
+A non-empty array means you already have a number for calls AND texts.
+An HTTP error, timeout, or missing credential means verification failed, not
+that no number exists. Explain that connection problem; do not buy a replacement.
+If the array is empty but you remember a number, check authenticated
+\`GET /accounting\` (\`account.phoneNumber\`) and flag any mismatch for operations.
+
+Only register a number when the gateway confirms none is assigned and the
+owner has authorized provisioning. Register once — it falls back to same-city
+overlay area codes when yours is dry:
 
     curl -s -X POST "$PHONE_GATEWAY_URL/numbers" \\
       -H "Authorization: Bearer $PHONE_GATEWAY_API_KEY" \\
@@ -195,8 +216,8 @@ charges anytime: curl -s "$PHONE_GATEWAY_URL/accounting".
       -d '{"to": "+15551234567", "goal": "Book a table for 2 at 7pm Friday under Ana. Get a confirmation.", "openingLine": "Hi! I am calling to book a table."}'
 
 Fields: "to" (E.164, required), "goal" (what the voice agent should achieve),
-"openingLine" (optional fixed first sentence), "voice" (optional), "from"
-(optional; your own number if you have one). Immediate 202 response contains
+"openingLine" (optional fixed first sentence), "voice" (optional).
+Omit "from"; the gateway uses your assigned number. Immediate 202 response contains
 "orchestrationId" and "statusUrl".
 
 ## Poll for the result
@@ -284,8 +305,8 @@ Send:
       -H 'content-type: application/json' \\
       -d '{"to": "+15551234567", "body": "Your table for 2 at 7pm Friday is booked."}'
 
-Add "from" with your own number if you have one. Receive by polling (inbound
-messages appear here; there is no push):
+Omit "from"; the gateway uses the same assigned number as your calls.
+Receive by polling (inbound messages appear here; there is no push):
 
     curl -s "$PHONE_GATEWAY_URL/sms?days=7&limit=50"
 
@@ -421,4 +442,9 @@ export function capability(id: CapabilityId): CapabilityDef {
 
 export function isCapabilityId(value: string): value is CapabilityId {
   return CAPABILITY_MAP.has(value as CapabilityId);
+}
+
+/** The phone gateway includes SMS without the separate Twilio integration. */
+export function isCapabilityEnabled(tenant: Tenant, id: CapabilityId): boolean {
+  return !!tenant.capabilities[id]?.enabled || (id === 'sms' && !!tenant.capabilities.phone?.enabled);
 }

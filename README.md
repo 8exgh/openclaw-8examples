@@ -39,6 +39,9 @@ npm run cli -- status
 npm run cli -- enable ana-reyes sms
 npm run cli -- disable ana-reyes sms
 
+# Refresh the assistant's knowledge of its existing phone number (no restart)
+npm run cli -- sync-phone <phone-enabled-tenant>
+
 # Run the nudge engine (do this from cron, e.g. hourly)
 npm run cli -- nudge
 

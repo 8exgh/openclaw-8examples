@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { CAPABILITIES } from '../capabilities/registry.js';
+import { CAPABILITIES, isCapabilityEnabled } from '../capabilities/registry.js';
 import { tenantDir } from '../store.js';
 import type { NudgeRecord, Tenant } from '../types.js';
 
@@ -31,7 +31,7 @@ export function pickNudge(tenant: Tenant, now: Date = new Date()): NudgeRecord |
     const candidates = CAPABILITIES.filter(
       (c) =>
         c.offerNudges.length > 0 &&
-        !tenant.capabilities[c.id]?.enabled &&
+        !isCapabilityEnabled(tenant, c.id) &&
         ts - lastNudgeAt(tenant, (n) => n.capability === c.id) >= OFFER_COOLDOWN_MS,
     ).sort((a, b) => a.priority - b.priority);
 
@@ -54,7 +54,7 @@ export function pickNudge(tenant: Tenant, now: Date = new Date()): NudgeRecord |
   const deepenCandidates = CAPABILITIES.filter(
     (c) =>
       c.deepenNudges.length > 0 &&
-      tenant.capabilities[c.id]?.enabled &&
+      isCapabilityEnabled(tenant, c.id) &&
       ts - lastNudgeAt(tenant, (n) => n.kind === 'deepen' && n.capability === c.id) >=
         DEEPEN_COOLDOWN_MS,
   ).sort((a, b) => a.priority - b.priority);

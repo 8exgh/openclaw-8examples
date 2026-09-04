@@ -35,7 +35,7 @@ function ensureDirForContainer(dir: string, mode = 0o755): void {
 }
 
 /** Bump when the managed layer changes in a way not captured by template files. */
-export const MANAGED_LAYER_VERSION = '0.1.1';
+export const MANAGED_LAYER_VERSION = '0.1.2';
 
 /** Credentials capable of funding model calls; suppressed inventory may not mount any of them. */
 export const MODEL_CREDENTIAL_KEYS = [
@@ -397,7 +397,7 @@ export function buildOpenclawConfig(
   return config;
 }
 
-function parseEnv(content: string): Map<string, string> {
+export function parseEnv(content: string): Map<string, string> {
   const map = new Map<string, string>();
   for (const line of content.split('\n')) {
     const m = line.match(/^([A-Z][A-Z0-9_]*)=(.*)$/);
@@ -505,6 +505,8 @@ function capabilitySections(tenant: Tenant, workspace: string): { enabled: strin
   const enabled: string[] = [];
   const upgrades: string[] = [];
   for (const def of CAPABILITIES.slice().sort((a, b) => a.priority - b.priority)) {
+    // Calls and texts share the phone gateway; do not advertise an SMS upgrade.
+    if (def.id === 'sms' && tenant.capabilities.phone?.enabled) continue;
     if (tenant.capabilities[def.id]?.enabled) {
       let line = `- **${def.label}** — ${def.tagline} (details: \`capabilities/${def.id}.md\`)`;
       // The email account index lives in workspace/mailbox.md, which the agent
@@ -521,6 +523,20 @@ function capabilitySections(tenant: Tenant, workspace: string): { enabled: strin
             `accounts — never say email isn't set up. Read \`mailbox.md\` for how to use them.`;
         }
       }
+      if (def.id === 'phone') {
+        let number: string | undefined;
+        try {
+          const account = JSON.parse(readFileSync(path.join(workspace, 'phone', 'account.json'), 'utf8'));
+          if (typeof account.phoneNumber === 'string' && /^\+[1-9]\d{7,14}$/.test(account.phoneNumber)) {
+            number = account.phoneNumber;
+          }
+        } catch { /* Not synchronized yet: use the authenticated lookup below. */ }
+        line += number ? `\n  - Your assigned assistant phone number: **${number}** (last verified in \`phone/account.json\`).` : '';
+        line += '\n  - This gateway supports BOTH calls and SMS using your assigned number. ' +
+          'Read `capabilities/phone.md` and use authenticated `GET $PHONE_GATEWAY_URL/numbers` ' +
+          'before claiming no number is configured or offering to register one. ' +
+          'A failed lookup does not mean the number is missing. Ignore older SMS setup offers.';
+      }
       enabled.push(line);
     } else if (def.offerNudges.length > 0) {
       upgrades.push(`- **${def.label}** — ${def.tagline}\n  - Offer line: "${def.offerNudges[0]}"`);
@@ -530,6 +546,22 @@ function capabilitySections(tenant: Tenant, workspace: string): { enabled: strin
     enabled: enabled.join('\n') || '- (nothing enabled yet — your job is conversation and paperwork triage)',
     upgrades: upgrades.join('\n') || '- (everything is enabled — focus on deepening usage)',
   };
+}
+
+/** Refresh always-loaded instructions without changing runtime configuration. */
+export function renderAgentInstructions(tenant: Tenant): Record<string, string> {
+  const workspace = path.join(tenantDir(tenant.id), 'workspace');
+  const sections = capabilitySections(tenant, workspace);
+  const vars = {
+    NAME: tenant.name,
+    TENANT_ID: tenant.id,
+    CHANNEL: tenant.channel,
+    ENABLED_CAPABILITIES: sections.enabled,
+    UPGRADE_CAPABILITIES: sections.upgrades,
+    MANAGED_VERSION: managedVersion(),
+  };
+  writeFileSync(path.join(workspace, 'AGENTS.md'), template('workspace/AGENTS.md', vars));
+  return vars;
 }
 
 /**
@@ -669,17 +701,7 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     }),
   );
 
-  const sections = capabilitySections(tenant, workspace);
-  const vars = {
-    NAME: tenant.name,
-    TENANT_ID: tenant.id,
-    CHANNEL: tenant.channel,
-    ENABLED_CAPABILITIES: sections.enabled,
-    UPGRADE_CAPABILITIES: sections.upgrades,
-    MANAGED_VERSION: managedVersion(),
-  };
-
-  writeFileSync(path.join(workspace, 'AGENTS.md'), template('workspace/AGENTS.md', vars));
+  const vars = renderAgentInstructions(tenant);
   writeFileSync(path.join(workspace, 'HEARTBEAT.md'), template('workspace/HEARTBEAT.md', vars));
 
   const soul = path.join(workspace, 'SOUL.md');

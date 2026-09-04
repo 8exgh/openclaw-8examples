@@ -14,6 +14,7 @@ import {
 } from './egress.js';
 import { applyOpenAIAuth, applyTenant, offboardTenant, pinTenantImage, runNudge, runNudgesAll, setAgentTimeout, setCapability, setFleetModelGateway, setModelAccess, setModelGateway, signup, summarize, syncModelAccess, updateFleet, verifyModelGateway } from './ops.js';
 import { managedVersion } from './provisioner/render.js';
+import { syncPhoneAccount } from './phone.js';
 import { renderSeed } from './provisioner/seed.js';
 import { getTenant, loadFleet, loadTenants, tenantDir } from './store.js';
 import type { ChannelId, Tier } from './types.js';
@@ -73,6 +74,8 @@ Usage: npm run cli -- <command> [args]
   enable <tenant> <capability>  Switch a capability on (re-renders + restarts)
   disable <tenant> <capability> Switch a capability off
   apply <tenant>                Re-render on current templates/config + restart
+  sync-phone <tenant>           Verify the existing phone number and refresh
+                                phone instructions without restarting the tenant
   pin <tenant> <image-ref>      Run one tenant on a specific OpenClaw release
                                 (digest-pinned; the canary path for a major
                                 upgrade). Fleet updates leave the pin alone.
@@ -204,6 +207,12 @@ async function main(): Promise<void> {
       const result = applyTenant(getTenant(positional[0]), { start });
       console.log(`Applied ${managedVersion()} to ${positional[0]}`);
       reportApply(result);
+      break;
+    }
+    case 'sync-phone': {
+      if (!positional[0]) throw new Error('Usage: sync-phone <tenant>');
+      const number = await syncPhoneAccount(getTenant(positional[0]));
+      console.log(`${positional[0]}: ${number ?? 'no owned number returned'}; phone instructions refreshed`);
       break;
     }
     case 'pin': {
