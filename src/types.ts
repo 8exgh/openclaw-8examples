@@ -112,6 +112,12 @@ export interface Fleet {
   pinnedImageRef?: string;
   /** What the fleet ran before the last update — the one-command rollback target. */
   previousImageRef?: string;
+  /**
+   * Fleet-wide model-gateway URL. When set, new tenants inherit it at signup
+   * (so the whole fleet is gateway-routed by default); existing tenants adopt
+   * it on the next `model-gateway <tenant> --fleet` or a fleet backfill.
+   */
+  modelGatewayUrl?: string;
   nextPort: number;
   /** Ports reclaimed from offboarded tenants, reused before nextPort advances. */
   freePorts?: number[];

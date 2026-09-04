@@ -8,8 +8,18 @@ export const DATA_DIR = path.join(ROOT, 'data');
 export const TENANTS_DIR = path.join(ROOT, 'tenants');
 export const TEMPLATES_DIR = path.join(ROOT, 'templates');
 
-const FLEET_FILE = path.join(DATA_DIR, 'fleet.json');
-const TENANTS_FILE = path.join(DATA_DIR, 'tenants.json');
+// The data and tenant roots are resolved lazily so tests can point the whole
+// control plane at a scratch directory (MOC_DATA_DIR / MOC_TENANTS_DIR)
+// without ever touching the real fleet registry. Production leaves both unset.
+export function dataDir(): string {
+  return process.env.MOC_DATA_DIR ? path.resolve(process.env.MOC_DATA_DIR) : DATA_DIR;
+}
+export function tenantsRoot(): string {
+  return process.env.MOC_TENANTS_DIR ? path.resolve(process.env.MOC_TENANTS_DIR) : TENANTS_DIR;
+}
+
+const fleetFile = (): string => path.join(dataDir(), 'fleet.json');
+const tenantsFile = (): string => path.join(dataDir(), 'tenants.json');
 
 const DEFAULT_FLEET: Fleet = {
   releaseChannel: 'latest',
@@ -28,19 +38,19 @@ function writeJson(file: string, value: unknown): void {
 }
 
 export function loadFleet(): Fleet {
-  return { ...DEFAULT_FLEET, ...readJson<Partial<Fleet>>(FLEET_FILE, {}) };
+  return { ...DEFAULT_FLEET, ...readJson<Partial<Fleet>>(fleetFile(), {}) };
 }
 
 export function saveFleet(fleet: Fleet): void {
-  writeJson(FLEET_FILE, fleet);
+  writeJson(fleetFile(), fleet);
 }
 
 export function loadTenants(): Tenant[] {
-  return readJson<Tenant[]>(TENANTS_FILE, []);
+  return readJson<Tenant[]>(tenantsFile(), []);
 }
 
 export function saveTenants(tenants: Tenant[]): void {
-  writeJson(TENANTS_FILE, tenants);
+  writeJson(tenantsFile(), tenants);
 }
 
 export function getTenant(id: string): Tenant {
@@ -58,7 +68,7 @@ export function upsertTenant(tenant: Tenant): void {
 }
 
 export function tenantDir(id: string): string {
-  return path.join(TENANTS_DIR, id);
+  return path.join(tenantsRoot(), id);
 }
 
 export function slugify(name: string): string {

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { CAPABILITIES, isCapabilityId } from './capabilities/registry.js';
 import {
   addExitNode,
@@ -11,7 +12,7 @@ import {
   tailscaleOnline,
   tenantTag,
 } from './egress.js';
-import { applyOpenAIAuth, applyTenant, offboardTenant, pinTenantImage, runNudge, runNudgesAll, setAgentTimeout, setCapability, setModelAccess, setModelGateway, signup, summarize, syncModelAccess, updateFleet } from './ops.js';
+import { applyOpenAIAuth, applyTenant, offboardTenant, pinTenantImage, runNudge, runNudgesAll, setAgentTimeout, setCapability, setFleetModelGateway, setModelAccess, setModelGateway, signup, summarize, syncModelAccess, updateFleet, verifyModelGateway } from './ops.js';
 import { managedVersion } from './provisioner/render.js';
 import { renderSeed } from './provisioner/seed.js';
 import { getTenant, loadFleet, loadTenants, tenantDir } from './store.js';
@@ -81,7 +82,11 @@ Usage: npm run cli -- <command> [args]
                                 shared model-gateway (e.g. http://model-gateway:8790).
                                 Takes effect once a minted MODEL_GATEWAY_KEY is
                                 in the tenant's .env; re-run apply after adding it.
+                                Preflights the gateway with the tenant's key
+                                first (skip with --force).
   model-gateway <tenant> --off  Back to direct provider wiring (instant rollback)
+  model-gateway --fleet <url>   Set the fleet default new tenants inherit at
+                    [--adopt]   signup; --adopt also backfills existing tenants
   set-timeout <tenant> <seconds>
                                 Set interactive agent timeout (60-3600) + restart
   apply-openai <tenant> <credential-file>
@@ -217,10 +222,44 @@ async function main(): Promise<void> {
       break;
     }
     case 'model-gateway': {
+      // Fleet default: `model-gateway --fleet <url> [--adopt]` sets the URL new
+      // tenants inherit at signup; --adopt also backfills existing tenants.
+      if (flags.has('fleet')) {
+        const [url] = positional;
+        const off = flags.has('off');
+        if (!url && !off) throw new Error('Usage: model-gateway --fleet <url> [--adopt] | model-gateway --fleet --off');
+        const res = setFleetModelGateway(off ? null : url, { adopt: flags.has('adopt'), start });
+        console.log(off ? 'fleet model-gateway default cleared' : `fleet model-gateway default: ${res.url}`);
+        if (res.adopted.length) console.log(`  adopted by ${res.adopted.length} tenant(s): ${res.adopted.join(', ')}`);
+        else if (!off) console.log('  new tenants inherit this at signup; add --adopt to backfill existing tenants');
+        break;
+      }
       const [tenantId, url] = positional;
       const off = flags.has('off');
       if (!tenantId || (!url && !off)) {
-        throw new Error('Usage: model-gateway <tenant> <url> | model-gateway <tenant> --off');
+        throw new Error('Usage: model-gateway <tenant> <url> | model-gateway <tenant> --off | model-gateway --fleet <url> [--adopt]');
+      }
+      // Preflight: if a real key is already installed, verify the gateway
+      // actually answers for this tenant before committing — a bad key or
+      // unreachable gateway would otherwise escrow the direct creds and take
+      // the tenant's models fully offline. Skips (with a note) when the key is
+      // not present yet (the normal set-URL-then-mint-key order) or when the
+      // control plane cannot reach the gateway; pass --force to skip entirely.
+      if (!off && !flags.has('force')) {
+        const envFile = path.join(tenantDir(tenantId), '.env');
+        const key = existsSync(envFile)
+          ? readFileSync(envFile, 'utf8').match(/^MODEL_GATEWAY_KEY=(.+)$/m)?.[1]
+          : undefined;
+        if (key && key !== 'changeme') {
+          const probe = await verifyModelGateway(url!, key);
+          if (!probe.ok) {
+            throw new Error(
+              `Refusing cutover: gateway preflight failed for ${tenantId} (${probe.error}). ` +
+                `Fix the key/URL/gateway, or re-run with --force to cut over anyway.`,
+            );
+          }
+          console.log(`  preflight ok: gateway serving ${tenantId} via ${probe.serving}`);
+        }
       }
       const result = setModelGateway(tenantId, off ? null : url, { start });
       if (off) {

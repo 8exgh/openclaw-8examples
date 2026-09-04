@@ -39,8 +39,10 @@ test('model-gateway cutover waits for a real key, then goes gateway-only', () =>
     assert.equal(config.models.providers.gateway, undefined);
     assert.ok(config.models.providers.kimi, 'direct providers stay until cutover');
     const compose = readFileSync(composeFile, 'utf8');
-    assert.match(compose, /name: openclaw-model-gateway/);
+    // Per-tenant PRIVATE network, not one flat shared bridge (isolation).
+    assert.match(compose, new RegExp(`name: mgw-${id}`));
     assert.match(compose, /- model-gateway/);
+    assert.ok(!compose.includes('openclaw-model-gateway'), 'must not use the flat shared network');
 
     // Operator installs the minted key: next apply cuts over to gateway-ONLY.
     const envFile = path.join(dir, '.env');
@@ -73,7 +75,36 @@ test('model-gateway cutover waits for a real key, then goes gateway-only', () =>
     assert.equal(config.models.providers.gateway, undefined);
     assert.ok(config.models.providers.kimi);
     assert.match(readFileSync(envFile, 'utf8'), /^KIMI_API_KEY=/m);
-    assert.ok(!readFileSync(composeFile, 'utf8').includes('openclaw-model-gateway'));
+    assert.ok(!readFileSync(composeFile, 'utf8').includes('name: mgw-'), 'rollback removes the private network reference');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a gateway-only tenant does not enable the direct OpenAI/Codex provider', () => {
+  const id = `test-mgw-codex-${Date.now()}`;
+  const tenant = makeTenant(id);
+  tenant.openaiAuth = { profileId: 'openai-codex:default', enabledAt: new Date().toISOString() };
+  const dir = path.join(process.cwd(), 'tenants', id);
+  try {
+    // Off the gateway, an installed OpenAI credential enables codex as before.
+    renderTenant(tenant, fleet);
+    let config = readConfig(dir);
+    assert.equal(config.plugins.entries.codex?.enabled, true);
+
+    // Gateway cutover: codex stays OFF even though the credential is installed,
+    // so the tenant keeps no live direct model provider outside the gateway.
+    tenant.modelGatewayUrl = 'http://model-gateway:8790';
+    renderTenant(tenant, fleet);
+    const envFile = path.join(dir, '.env');
+    writeFileSync(envFile, readFileSync(envFile, 'utf8').replace(
+      /^MODEL_GATEWAY_KEY=.*$/m,
+      `MODEL_GATEWAY_KEY=${TEST_KEY}`,
+    ));
+    renderTenant(tenant, fleet);
+    config = readConfig(dir);
+    assert.equal(config.agents.defaults.model.primary, 'gateway/claude-opus-4-8');
+    assert.ok(!config.plugins.entries.codex?.enabled, 'codex must not be enabled on a gateway-only tenant');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

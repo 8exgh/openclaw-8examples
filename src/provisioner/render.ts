@@ -378,7 +378,13 @@ export function buildOpenclawConfig(
     config = deepMerge(config, capability(id as CapabilityId).configPatch(tenant));
   }
 
-  if (tenant.openaiAuth) {
+  // The Codex plugin is the tenant's direct OpenAI/ChatGPT OAuth path. A
+  // gateway-only tenant must not keep a live direct model provider, so it is
+  // left disabled there even when an OpenAI credential is installed — the
+  // credential stays inert (the operator still logs the profile out of the
+  // agent auth store, as with the anthropic/kimi/minimax profiles). Off the
+  // gateway it is enabled as before.
+  if (tenant.openaiAuth && !opts.modelGatewayUrl) {
     config = deepMerge(config, {
       plugins: {
         entries: {
@@ -608,10 +614,15 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     JSON.stringify(renderedConfig, null, 2) + '\n',
   );
 
-  // Joining the shared gateway network keys off the tenant FLAG (not full key
-  // readiness) so the operator can reach the gateway from inside the claw
-  // container before cutover. It is deliberate opt-in either way: compose up
-  // fails hard if the external network does not exist on the box.
+  // Each opted-in claw joins its OWN private, internal network (mgw-<tenant>)
+  // that carries only claw↔gateway traffic — NOT one flat bridge shared by
+  // every tenant, where a compromised container could reach its peers. The
+  // control plane creates the network (--internal, so no egress path of its
+  // own) and connects the trusted model-gateway container to it (see
+  // ensureTenantGatewayNetwork); the claw still reaches the internet over its
+  // default bridge. Keys off the FLAG (not full key readiness) so the operator
+  // can reach the gateway before cutover. compose up fails hard if the network
+  // is missing, which the apply path guarantees first.
   const joinGatewayNetwork = !!tenant.modelGatewayUrl && tenant.tier !== 'desktop';
   writeFileSync(
     path.join(dir, 'docker-compose.yml'),
@@ -626,7 +637,7 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
         ? '    networks:\n      - default\n      - model-gateway'
         : '',
       MODEL_GATEWAY_NETWORKS_TOP: joinGatewayNetwork
-        ? 'networks:\n  default: {}\n  model-gateway:\n    external: true\n    name: openclaw-model-gateway'
+        ? `networks:\n  default: {}\n  model-gateway:\n    external: true\n    name: mgw-${tenant.id}`
         : '',
     }),
   );

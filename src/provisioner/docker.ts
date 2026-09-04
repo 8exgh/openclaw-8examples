@@ -149,8 +149,54 @@ export function ensurePlugins(tenant: Tenant, packages: string[]): string[] {
   return installed;
 }
 
+/** The model-gateway container name (from the model-gateway compose). */
+const MODEL_GATEWAY_CONTAINER = 'model-gateway';
+
+/**
+ * A gateway-routed claw gets its OWN internal network (mgw-<tenant>) carrying
+ * only claw↔gateway traffic, so a compromised container can reach the trusted
+ * gateway but never a peer claw. Idempotent: creates the network if missing
+ * and connects the running model-gateway container to it. Runs BEFORE compose
+ * up because the tenant compose references the network as external. The
+ * gateway may not be up yet on a fresh box — that connect is a soft failure
+ * (the next apply, once the gateway is running, wires it in).
+ */
+export function ensureTenantGatewayNetwork(tenant: Tenant): void {
+  const net = `mgw-${tenant.id}`;
+  try {
+    docker(['network', 'inspect', net]);
+  } catch {
+    try {
+      docker(['network', 'create', '--internal', net]);
+    } catch (err) {
+      console.warn(`  ${tenant.id}: could not create private gateway network ${net} (${errText(err).split('\n')[0]})`);
+      return;
+    }
+  }
+  try {
+    docker(['network', 'connect', net, MODEL_GATEWAY_CONTAINER]);
+  } catch (err) {
+    const text = errText(err);
+    // Already attached is success; gateway-not-running is a soft failure.
+    if (!/already exists|endpoint with name|is not running/i.test(text) && /No such container/i.test(text)) {
+      console.warn(`  ${tenant.id}: model-gateway not running yet; ${net} will attach on the next apply`);
+    } else if (!/already exists|endpoint with name/i.test(text)) {
+      console.warn(`  ${tenant.id}: could not attach model-gateway to ${net} (${text.split('\n')[0]})`);
+    }
+  }
+}
+
+/** Remove a tenant's private gateway network (best-effort; on offboard). */
+export function removeTenantGatewayNetwork(tenant: Tenant): void {
+  const net = `mgw-${tenant.id}`;
+  try { docker(['network', 'disconnect', '-f', net, MODEL_GATEWAY_CONTAINER]); } catch { /* not attached */ }
+  try { docker(['network', 'rm', net]); } catch { /* gone or still in use */ }
+}
+
 export function composeUp(tenant: Tenant, plugins: string[] = []): void {
   const dir = tenantDir(tenant.id);
+  // The private gateway network must exist before compose up references it.
+  if (tenant.modelGatewayUrl && tenant.tier !== 'desktop') ensureTenantGatewayNetwork(tenant);
   // Install before first start: a 2026.8.1+ gateway that boots with a
   // configured-but-missing plugin refuses ready and crash-loops.
   ensurePlugins(tenant, plugins);

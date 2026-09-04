@@ -91,6 +91,12 @@ export function signup(input: SignupInput, opts: { start?: boolean } = {}): Appl
     gatewayPort,
     createdAt: now,
     modelAccess: 'suppressed',
+    // New inventory inherits the fleet's gateway default so the whole fleet is
+    // gateway-routed by construction rather than one manual CLI flag at a
+    // time. It cuts over only once a MODEL_GATEWAY_KEY is minted into its .env
+    // (renderTenant's readiness gate), so a fresh suppressed slot carries the
+    // gateway-only config shape and no consumable credential until assigned.
+    ...(fleet.modelGatewayUrl ? { modelGatewayUrl: fleet.modelGatewayUrl } : {}),
     capabilities: {},
     nudgeLog: [],
   };
@@ -169,6 +175,67 @@ export function setModelGateway(
   return applyTenant(tenant, opts);
 }
 
+/**
+ * Set (or clear, with null) the fleet-wide model-gateway URL that new tenants
+ * inherit at signup. With `adopt`, every active tenant that has no explicit
+ * per-tenant URL is switched onto it and re-applied — the fleet backfill that
+ * turns "gateway is a manual per-claw flag" into "gateway by default".
+ */
+export function setFleetModelGateway(
+  url: string | null,
+  opts: { adopt?: boolean; start?: boolean } = {},
+): { url: string | null; adopted: string[] } {
+  const fleet = loadFleet();
+  if (url === null) {
+    delete fleet.modelGatewayUrl;
+  } else {
+    if (!/^https?:\/\//.test(url)) throw new Error(`model-gateway url must be http(s), got: ${url}`);
+    fleet.modelGatewayUrl = url.replace(/\/+$/, '');
+  }
+  saveFleet(fleet);
+  const adopted: string[] = [];
+  if (opts.adopt && url !== null) {
+    for (const tenant of activeTenants()) {
+      if (tenant.modelGatewayUrl === fleet.modelGatewayUrl) continue;
+      tenant.modelGatewayUrl = fleet.modelGatewayUrl;
+      upsertTenant(tenant);
+      applyTenant(tenant, { start: opts.start });
+      adopted.push(tenant.id);
+    }
+  }
+  return { url: fleet.modelGatewayUrl ?? null, adopted };
+}
+
+/**
+ * Preflight a tenant's gateway before trusting the cutover: ask the gateway
+ * who is serving this tenant with the tenant's own key. Returns { ok } or
+ * { ok:false, error } — a bad/typo'd/revoked key, an unreachable gateway, or
+ * a tenant with no usable upstream all fail here, so the caller can refuse to
+ * escrow the tenant's direct credentials behind a gateway that cannot answer.
+ */
+export async function verifyModelGateway(
+  url: string,
+  key: string,
+  opts: { timeoutMs?: number } = {},
+): Promise<{ ok: boolean; error?: string; serving?: string }> {
+  const target = `${url.replace(/\/+$/, '')}/v1/tenant/status`;
+  try {
+    const res = await fetch(target, {
+      headers: { 'x-api-key': key },
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return { ok: false, error: `${res.status} ${body.slice(0, 200)}` };
+    }
+    const data = (await res.json()) as { ok?: boolean; serving?: string };
+    if (!data.ok) return { ok: false, error: 'gateway reports no usable upstream for this tenant', serving: data.serving };
+    return { ok: true, serving: data.serving };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /** Record the sales system's authoritative assignment state. */
 export function setModelAccess(tenantId: string, assigned: boolean, opts: { start?: boolean } = {}): ApplyResult {
   const tenant = getTenant(tenantId);
@@ -185,6 +252,32 @@ export function setModelAccess(tenantId: string, assigned: boolean, opts: { star
   return result;
 }
 
+/**
+ * Whether a tenant's on-disk credentials already match its desired assignment
+ * state — the "nothing to converge" test used by reconciliation. A gateway
+ * tenant funds calls with its minted MODEL_GATEWAY_KEY and holds no direct
+ * provider keys, so an assigned one is satisfied by the gateway key; a
+ * suppressed one must have BOTH the direct keys and the gateway key gone.
+ * Pure and env-string-based so it can be reasoned about (and tested) without
+ * touching docker or the store.
+ */
+export function modelCredentialsConverged(
+  tenant: Pick<Tenant, 'modelGatewayUrl'>,
+  next: 'assigned' | 'suppressed',
+  envText: string,
+): boolean {
+  const hasRealKey = (key: string): boolean => {
+    const match = envText.match(new RegExp(`^${key}=(.+)$`, 'm'));
+    return Boolean(match?.[1] && match[1] !== 'changeme');
+  };
+  const keyAbsent = (key: string): boolean => !new RegExp(`^${key}=`, 'm').test(envText);
+  return next === 'assigned'
+    ? tenant.modelGatewayUrl
+      ? hasRealKey('MODEL_GATEWAY_KEY')
+      : MODEL_CREDENTIAL_KEYS.some(hasRealKey)
+    : [...MODEL_CREDENTIAL_KEYS, 'MODEL_GATEWAY_KEY'].every(keyAbsent);
+}
+
 /** Synchronize every inventory slot atomically before a fleet rollout. */
 export function syncModelAccess(assignedIds: ReadonlySet<string>): { assigned: number; suppressed: number; changed: string[] } {
   const tenants = loadTenants();
@@ -196,13 +289,7 @@ export function syncModelAccess(assignedIds: ReadonlySet<string>): { assigned: n
     const next = assignedIds.has(tenant.id) ? 'assigned' : 'suppressed';
     const envFile = path.join(tenantDir(tenant.id), '.env');
     const env = existsSync(envFile) ? readFileSync(envFile, 'utf8') : '';
-    const hasRealKey = (key: string): boolean => {
-      const match = env.match(new RegExp(`^${key}=(.+)$`, 'm'));
-      return Boolean(match?.[1] && match[1] !== 'changeme');
-    };
-    const credentialsMatch = next === 'assigned'
-      ? MODEL_CREDENTIAL_KEYS.some(hasRealKey)
-      : MODEL_CREDENTIAL_KEYS.every((key) => !new RegExp(`^${key}=`, 'm').test(env));
+    const credentialsMatch = modelCredentialsConverged(tenant, next, env);
     const status = containerStatus(tenant);
     const runtimeReady = tenant.tier === 'desktop' || (next === 'assigned'
       ? /\bUp\b/i.test(status)
