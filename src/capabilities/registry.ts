@@ -171,6 +171,21 @@ phone gateway at $PHONE_GATEWAY_URL. For calls, one HTTP request states a
 goal; a server-side voice loop conducts the conversation and hangs up; you
 read back a transcript annotated with how the person spoke.
 
+## How this integration is accessed
+
+Use your \`exec\` tool to run the authenticated HTTP requests below. Outbound
+calls use \`POST $PHONE_GATEWAY_URL/orchestrations\`; SMS uses \`POST /sms\`.
+The phone gateway is an external service already configured for this tenant.
+It does not require a native OpenClaw voice plugin, channel, or phone tool.
+The \`openclaw\` setup assistant and plugin catalog do not describe this
+managed integration; do not ask them to enable it or delegate calls to them.
+
+For a calling request, read this file and use the gateway directly once the
+recipient and goal are authorized. If an earlier chat reply said calling was
+disabled or required a plugin, check the live gateway and correct that reply.
+Report a concrete HTTP/tool error if a request fails; do not infer that calls
+are unavailable from the absence of a native telephony tool.
+
 EVERY request to the gateway must send your token:
 -H "Authorization: Bearer $PHONE_GATEWAY_API_KEY"
 (add it to each curl below; examples omit it for brevity).

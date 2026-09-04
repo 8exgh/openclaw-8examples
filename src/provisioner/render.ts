@@ -35,7 +35,7 @@ function ensureDirForContainer(dir: string, mode = 0o755): void {
 }
 
 /** Bump when the managed layer changes in a way not captured by template files. */
-export const MANAGED_LAYER_VERSION = '0.1.2';
+export const MANAGED_LAYER_VERSION = '0.1.3';
 
 /** Credentials capable of funding model calls; suppressed inventory may not mount any of them. */
 export const MODEL_CREDENTIAL_KEYS = [
@@ -536,6 +536,12 @@ function capabilitySections(tenant: Tenant, workspace: string): { enabled: strin
           'Read `capabilities/phone.md` and use authenticated `GET $PHONE_GATEWAY_URL/numbers` ' +
           'before claiming no number is configured or offering to register one. ' +
           'A failed lookup does not mean the number is missing. Ignore older SMS setup offers.';
+        line += '\n  - To make an authorized call, use your `exec` tool to POST to ' +
+          '`$PHONE_GATEWAY_URL/orchestrations` following `capabilities/phone.md`. ' +
+          'This external gateway needs no native voice plugin or phone tool. ' +
+          'Do not ask the `openclaw` setup assistant to unlock it: its plugin catalog does not ' +
+          'describe this integration. Correct earlier chat claims that calling is disabled ' +
+          'when the live gateway confirms access.';
       }
       enabled.push(line);
     } else if (def.offerNudges.length > 0) {
