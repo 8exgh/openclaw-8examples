@@ -28,7 +28,16 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
       <Testables>
+         <TestableReference skipped="NO">
+            <BuildableReference BuildableIdentifier="primary"
+               BlueprintIdentifier="AC00000000000000000000C8"
+               BuildableName="OpenClawTests.xctest" BlueprintName="OpenClawTests"
+               ReferencedContainer="container:OpenClaw.xcodeproj" />
+         </TestableReference>
       </Testables>
+      <EnvironmentVariables>
+         <EnvironmentVariable key="OPENCLAW_DEMO" value="1" isEnabled="YES" />
+      </EnvironmentVariables>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

@@ -5,6 +5,7 @@ export type CapabilityId =
   | 'calendar'
   | 'sms'
   | 'phone'
+  | 'glasses'
   | 'webdev'
   | 'paperwork';
 

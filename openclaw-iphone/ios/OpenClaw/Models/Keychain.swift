@@ -48,4 +48,17 @@ enum Keychain {
         ]
         SecItemDelete(query as CFDictionary)
     }
+
+    static func load<T: Decodable>(_ account: String, as type: T.Type) -> T? {
+        guard let json = string(for: account) else { return nil }
+        return try? JSONDecoder().decode(type, from: Data(json.utf8))
+    }
+
+    static func save<T: Encodable>(_ value: T, account: String) throws {
+        let data = try JSONEncoder().encode(value)
+        guard let json = String(data: data, encoding: .utf8), set(json, for: account) else {
+            throw NSError(domain: "OpenClaw.Keychain", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Could not save securely on this iPhone."])
+        }
+    }
 }

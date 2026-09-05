@@ -30,6 +30,7 @@ struct ClawsView: View {
             .navigationTitle("Your assistants")
             .navigationDestination(for: ClawCard.self) { claw in
                 ConversationView(claw: claw)
+                    .onAppear { model.select(claw: claw) }
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

@@ -8,6 +8,14 @@
 	<false/>
 	<key>OPENCLAW_API_BASE_URL</key>
 	<string>https://8examples.com</string>
+	<key>OPENCLAW_GLASSES_RELAY_URL</key>
+	<string></string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Speak to your assistant through your glasses during a listening session you start.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Turn spoken requests into text for your assistant.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Use your paired glasses for spoken requests and replies.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>8Examples AI Assistant shares your location with your assigned assistant(s) so they can help with things near you — only if you say yes.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
@@ -15,6 +23,7 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
+		<string>audio</string>
 	</array>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>

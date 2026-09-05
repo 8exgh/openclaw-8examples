@@ -3,7 +3,7 @@ import Foundation
 /// Screenshot mode: `OPENCLAW_DEMO=1` in the launch environment answers every
 /// API call locally with canned data, so App Store screenshots need no
 /// network and no real claw. `OPENCLAW_DEMO_TAB` picks the tab
-/// (claws|location|website|phone|connect) and `OPENCLAW_DEMO_SCREEN` an
+/// (claws|glasses|location|website|phone|connect) and `OPENCLAW_DEMO_SCREEN` an
 /// inner screen (chat|alexa|telegram).
 enum DemoMode {
     static var isActive: Bool { ProcessInfo.processInfo.environment["OPENCLAW_DEMO"] == "1" }

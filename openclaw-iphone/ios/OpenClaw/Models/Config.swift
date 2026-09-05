@@ -8,6 +8,11 @@ enum AppConfig {
         return URL(string: configured ?? "") ?? URL(string: "https://8examples.com")!
     }
 
+    /// Optional glasses relay. An empty value leaves the feature ready for setup.
+    static var defaultGlassesRelayURL: String {
+        Bundle.main.object(forInfoDictionaryKey: "OPENCLAW_GLASSES_RELAY_URL") as? String ?? ""
+    }
+
     /// How often the phone reports its position while sharing is on.
     static let locationReportInterval: TimeInterval = 5 * 60
 

@@ -1,0 +1,27 @@
+services:
+  relay:
+    build: .
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 210s
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8795
+      DB_FILE: /app/data/glasses.sqlite
+      PUBLISHERS_FILE: /app/config.local.json
+    ports:
+      - "127.0.0.1:8795:8795"
+    volumes:
+      - ./data:/app/data
+      - ./config.local.json:/app/config.local.json:ro
+      - ./secrets:/app/secrets:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8795/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

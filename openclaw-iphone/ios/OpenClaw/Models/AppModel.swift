@@ -14,12 +14,14 @@ final class AppModel {
     var me: MeResult?
     var locationSharing: LocationSharingResult?
     var selectedClawId: String?
+    var selectedTab: String = DemoMode.tab ?? "claws"
     var errorMessage: String?
     var busy = false
     var serverURLString: String { didSet { applyServerURL() } }
 
     let api: APIClient
     let location = LocationReporter()
+    let glasses = GlassesModel()
 
     private static let tokenKey = "sessionToken"
     private static let serverKey = "serverURL"
@@ -36,6 +38,9 @@ final class AppModel {
             api = APIClient(baseURL: URL(string: urlString) ?? AppConfig.defaultAPIBaseURL, token: Keychain.string(for: Self.tokenKey))
         }
         selectedClawId = defaults.string(forKey: Self.selectedClawKey)
+        glasses.onAuthenticationFailure = { [weak self] in
+            Task { @MainActor in await self?.refresh() }
+        }
     }
 
     var claws: [ClawCard] { me?.claws ?? [] }
@@ -47,6 +52,7 @@ final class AppModel {
     func select(claw: ClawCard) {
         selectedClawId = claw.clawId
         UserDefaults.standard.set(claw.clawId, forKey: Self.selectedClawKey)
+        synchronizeGlasses()
     }
 
     // MARK: lifecycle
@@ -61,8 +67,10 @@ final class AppModel {
     func refresh() async {
         do {
             me = try await api.me()
+            if !claws.contains(where: { $0.clawId == selectedClawId }), let first = claws.first { select(claw: first) }
+            synchronizeGlasses()
+            openPendingGlassesNotification()
             locationSharing = try await api.locationSharing()
-            if selectedClaw == nil, let first = claws.first { select(claw: first) }
             errorMessage = nil
         } catch APIError.unauthorized {
             logout()
@@ -79,7 +87,7 @@ final class AppModel {
             api.token = result.token
             Keychain.set(result.token, for: Self.tokenKey)
             await refresh()
-            phase = .ready
+            phase = api.token == nil ? .loggedOut : .ready
             resumeLocationSharingIfOn()
         } catch {
             errorMessage = error.localizedDescription
@@ -88,13 +96,33 @@ final class AppModel {
 
     func logout() {
         location.stop()
-        let api = self.api
-        Task { try? await api.logout() }   // revoke server-side; local sign-out never waits on it
+        glasses.disconnect()
+        // Capture the old token before clearing it; the async revocation must not
+        // accidentally run without auth or revoke a subsequent login.
+        if !DemoMode.isActive {
+            let signedOutAPI = APIClient(baseURL: api.baseURL, token: api.token)
+            Task { try? await signedOutAPI.logout() }
+        }
         api.token = nil
         Keychain.delete(Self.tokenKey)
         me = nil
         locationSharing = nil
         phase = .loggedOut
+        selectedTab = "claws"
+    }
+
+    private func synchronizeGlasses() {
+        glasses.updateSession(token: api.token, username: me?.username,
+                              clawId: selectedClaw?.clawId, demo: DemoMode.isActive)
+    }
+
+    func openPendingGlassesNotification() {
+        guard me != nil, !DemoMode.isActive,
+              let clawId = UserDefaults.standard.string(forKey: "glasses.notificationClawId") else { return }
+        UserDefaults.standard.removeObject(forKey: "glasses.notificationClawId")
+        guard let claw = claws.first(where: { $0.clawId == clawId }) else { return }
+        select(claw: claw)
+        selectedTab = "glasses"
     }
 
     private func applyServerURL() {

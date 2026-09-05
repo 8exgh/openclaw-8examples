@@ -23,7 +23,7 @@ instead of duplicating them.
 
 | Dir | What |
 | --- | --- |
-| `ios/` | SwiftUI app "My Claw" (`OpenClaw.xcodeproj`, iOS 17+, bundle `com.8examples.openclaw`). Tabs: Claws, Location, Website, Phone, Connect (Telegram + Alexa). |
+| `ios/` | The single SwiftUI app "My Claw" (`OpenClaw.xcodeproj`, iOS 17+, bundle `ai-assistant.8examples.com`). Tabs: Assistants, Glasses, Location, Website, Phone, Connect (Telegram + Alexa); iOS places overflow tabs under More. |
 | `background-processor/` | Relay worker for the fleet box: polls 8examples for unanswered owner messages, runs `docker exec openclaw-<id> openclaw agent …` (same as `rocketchat/bridge.mjs`, own `iphone:` session key), records the reply; 5 retries then `failed`. `CLAW_RUNNER=echo` for local dev. |
 | `http/` | JetBrains HTTP-client walkthrough of the API. |
 | `../templates/workspace/capabilities/iphone.md` | Rendered into every tenant workspace by the provisioner: how a claw asks where its owner is, how it records its Telegram bot. |
@@ -68,3 +68,29 @@ the tenant already has.
   utterances).
 
 Build check: `xcodebuild -project ios/OpenClaw.xcodeproj -scheme OpenClaw -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build`.
+
+## Glasses in this app
+
+The **Glasses** tab shares this app's existing login, Keychain and assistant
+picker. It supports spoken requests through paired Meta glasses, spoken replies,
+and a summary inbox. Signing out stops listening and disconnects the notification
+subscription. Notification taps open the Glasses inbox for an owned assistant;
+receiving a notification does not change the selected assistant by itself.
+
+Its one new backend is [openclaw-meta-glasses](../openclaw-meta-glasses/README.md).
+Deploy that relay on the fleet host, then set `OPENCLAW_GLASSES_RELAY_URL` in
+`Info.plist` or use **Glasses → Connection settings**. The tab uses the same `mob_`
+session as the rest of the app. No second app registration or password flow is
+needed. Existing chat and location traffic still uses `/api/mobile/*`.
+
+Enable Push Notifications on the existing App ID `ai-assistant.8examples.com`.
+The project keeps that bundle identifier, signing team and app icon. The new
+backend's `APNS_TOPIC` must match it. Debug uses development/sandbox push;
+Release/TestFlight uses production. The app retains its `location` background
+mode and adds `audio` for a listening session the owner starts explicitly.
+
+`OpenClawTests` is included in the existing Xcode scheme. Its tests cover shared
+session use, assistant selection, request retries, sign-out, addressed speech,
+and screenshot mode; the test host runs with `OPENCLAW_DEMO=1` to avoid real
+account traffic. Run them on an available iPhone simulator in Xcode. Native
+build, signing, and paired-device checks require a Mac with the iOS SDK.

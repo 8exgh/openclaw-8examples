@@ -1,0 +1,6 @@
+.env
+*.p8
+config.local.json
+data/
+.build/
+node_modules/

@@ -35,7 +35,7 @@ function ensureDirForContainer(dir: string, mode = 0o755): void {
 }
 
 /** Bump when the managed layer changes in a way not captured by template files. */
-export const MANAGED_LAYER_VERSION = '0.1.4';
+export const MANAGED_LAYER_VERSION = '0.2.0';
 
 /** Credentials capable of funding model calls; suppressed inventory may not mount any of them. */
 export const MODEL_CREDENTIAL_KEYS = [
@@ -59,6 +59,9 @@ export function managedVersion(): string {
     }
   };
   if (existsSync(TEMPLATES_DIR)) walk(TEMPLATES_DIR);
+  for (const file of ['capability.md', 'publish-summary.mjs']) {
+    hash.update(readFileSync(new URL(`../../openclaw-meta-glasses/integration/${file}`, import.meta.url)));
+  }
   return `${MANAGED_LAYER_VERSION}+${hash.digest('hex').slice(0, 12)}`;
 }
 
@@ -544,6 +547,12 @@ function capabilitySections(tenant: Tenant, workspace: string): { enabled: strin
           'describe this integration. Correct earlier chat claims that calling is disabled ' +
           'when the live gateway confirms access.';
       }
+      if (def.id === 'glasses') {
+        line += '\n  - After meaningful work is completed, publish a short outcome summary to the owner: ' +
+          'read `capabilities/glasses.md`, write `glasses/summary.json`, then run ' +
+          '`node glasses/publish-summary.mjs glasses/summary.json`. Reuse the same action id for delivery retries. ' +
+          'For requests arriving in a `glasses:` session, the relay delivers your final reply automatically; do not send a duplicate summary.';
+      }
       enabled.push(line);
     } else if (def.offerNudges.length > 0) {
       upgrades.push(`- **${def.label}** — ${def.tagline}\n  - Offer line: "${def.offerNudges[0]}"`);
@@ -580,6 +589,17 @@ export function installPhoneGatewayHelper(tenant: Tenant): void {
   }
   mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, 'gateway.mjs'), readFileSync(path.join(TEMPLATES_DIR, 'workspace', 'phone', 'gateway.mjs')));
+}
+
+function installGlassesHelper(tenant: Tenant): void {
+  const dir = path.join(tenantDir(tenant.id), 'workspace', 'glasses');
+  const target = path.join(dir, 'publish-summary.mjs');
+  if (!tenant.capabilities.glasses?.enabled) {
+    rmSync(target, { force: true });
+    return;
+  }
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(target, readFileSync(new URL('../../openclaw-meta-glasses/integration/publish-summary.mjs', import.meta.url)));
 }
 
 /**
@@ -721,6 +741,7 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
 
   const vars = renderAgentInstructions(tenant);
   installPhoneGatewayHelper(tenant);
+  installGlassesHelper(tenant);
   writeFileSync(path.join(workspace, 'HEARTBEAT.md'), template('workspace/HEARTBEAT.md', vars));
 
   const soul = path.join(workspace, 'SOUL.md');

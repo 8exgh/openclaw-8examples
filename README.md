@@ -5,6 +5,13 @@ The customer is a non-technical person who just messages "their assistant" on
 WhatsApp/Telegram/Signal; you operate everything behind it: provisioning,
 capabilities, secrets, updates, and the product's habit-building nudge loop.
 
+The [glasses backend](openclaw-meta-glasses/README.md) powers a Glasses tab in
+the existing [My Claw iPhone app](openclaw-iphone/README.md): voice requests,
+spoken replies, and completion summaries. An opt-in `glasses` capability
+also delivers summaries of work done in other channels.
+See [the Meta glasses checklist](todo-meta-glasses.md) for the remaining
+deployment, signing, and device verification steps.
+
 ```
                  ┌─────────────────────────────────────────┐
                  │ control plane (this repo)               │

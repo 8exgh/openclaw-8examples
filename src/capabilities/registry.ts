@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { CapabilityId, Tenant } from '../types.js';
 
 /**
@@ -34,6 +35,20 @@ export interface CapabilityDef {
 }
 
 export const CAPABILITIES: CapabilityDef[] = [
+  {
+    id: 'glasses',
+    label: 'Meta glasses',
+    tagline: 'Talk to me through your glasses and receive a summary when I finish work.',
+    priority: 7,
+    env: [
+      { key: 'GLASSES_RELAY_URL', description: 'HTTPS origin of the Claw Glasses relay' },
+      { key: 'GLASSES_RELAY_TOKEN', description: 'This tenant’s summary publisher credential' },
+    ],
+    configPatch: () => ({}),
+    workspaceDoc: readFileSync(new URL('../../openclaw-meta-glasses/integration/capability.md', import.meta.url), 'utf8'),
+    offerNudges: [],
+    deepenNudges: [],
+  },
   {
     id: 'email',
     label: 'Email',

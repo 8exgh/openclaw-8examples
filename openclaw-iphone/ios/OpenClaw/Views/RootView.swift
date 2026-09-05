@@ -18,13 +18,16 @@ struct RootView: View {
 struct MainTabView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
-    @State private var tab: String = DemoMode.tab ?? "claws"
 
     var body: some View {
-        TabView(selection: $tab) {
+        @Bindable var model = model
+        TabView(selection: $model.selectedTab) {
             ClawsView()
                 .tabItem { Label("Assistants", systemImage: "bubble.left.and.bubble.right") }
                 .tag("claws")
+            GlassesView()
+                .tabItem { Label("Glasses", systemImage: "eyeglasses") }
+                .tag("glasses")
             LocationView()
                 .tabItem { Label("Location", systemImage: "location") }
                 .tag("location")

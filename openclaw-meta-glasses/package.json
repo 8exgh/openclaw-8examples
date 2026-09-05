@@ -1,0 +1,17 @@
+{
+  "name": "openclaw-meta-glasses",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server/index.mjs",
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check server/app.mjs && node --check server/store.mjs && node --check server/worker.mjs && node --check server/apns.mjs && node --check server/index.mjs"
+  },
+  "dependencies": {
+    "fastify": "5.11.3"
+  }
+}
