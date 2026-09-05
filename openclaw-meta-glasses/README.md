@@ -6,7 +6,7 @@ requests, spoken replies, and completion summaries alongside its existing chat,
 location, website, phone and connection features. There is one app target and
 one App Store identity; this folder contains the relay and tenant integration.
 
-Fleet deployment status and remaining setup are tracked in
+The fleet backend is live at **https://glasses.fusenv.com**. Remaining setup is tracked in
 [todo-meta-glasses.md](../todo-meta-glasses.md). The
 [operations runbook](deploy/README.md) covers deployment and daily backups.
 

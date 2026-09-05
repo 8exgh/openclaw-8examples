@@ -1,8 +1,8 @@
 # Meta glasses: remaining setup and verification
 
 The implementation is in the existing iPhone app, with one new backend in
-`openclaw-meta-glasses/`. The relay is running on the fleet host with verified
-daily backups. Public HTTPS routing is still pending GitHub workflow access.
+`openclaw-meta-glasses/`. The relay is live at **https://glasses.fusenv.com** with
+verified daily backups and public HTTPS routing. Section 2 is complete.
 Push credentials, the iOS build, and paired-glasses checks still need to be done.
 Backend/fleet validation passed 30 tests, TypeScript checking, and backend syntax
 checking on September 5, 2026; two additional backup tests now pass as well.
@@ -37,7 +37,7 @@ and the [iPhone README](openclaw-iphone/README.md) for the existing app.
 
 - [x] Choose `glasses.fusenv.com` as the public hostname. The fleet host uses
   Cloudflare Tunnel; its connector runs with host networking, so the relay
-  origin will be `http://127.0.0.1:8795`.
+  origin is `http://127.0.0.1:8795`.
 - [x] Pull the committed integration into `/home/openclaw/managed-openclaw` on
   the fleet host (`72.251.7.26`). Verified Node `v22.23.2`, Docker `29.1.3`, and
   access to the running `openclaw-openclaw1` from inside the relay container.
@@ -73,22 +73,25 @@ and the [iPhone README](openclaw-iphone/README.md) for the existing app.
   `config.local.json`, and a consistent SQLite snapshot. APNs keys will be
   included automatically once added to `secrets/` in step 3. Only one relay
   process uses the database. See the [operations runbook](openclaw-meta-glasses/deploy/README.md).
-- [ ] Publish and run the prepared [Cloudflare workflow](openclaw-meta-glasses/deploy/github-cloudflare.yml)
-  as `.github/workflows/configure-openclaw-glasses-cloudflare.yml` in
-  `8exgh/devops`. It uses that repository's existing DNS and tunnel secrets to
+- [x] Publish and run the [Cloudflare workflow](https://github.com/8exgh/devops/actions/workflows/configure-openclaw-glasses-cloudflare.yml)
+  in `8exgh/devops`. It uses that repository's existing DNS and tunnel secrets to
   add a proxied CNAME and ingress rule on tunnel
   `a96d6a4a-940c-47e2-bd82-479bbfc07884`, preserving all existing routes.
-- [ ] Verify `https://glasses.fusenv.com/health` from outside the fleet host
+  [Successful DNS and HTTPS verification](https://github.com/8exgh/devops/actions/runs/33992007669).
+- [x] Verify `https://glasses.fusenv.com/health` from outside the fleet host
   returns HTTP 200 and `/v1/me` rejects an unauthenticated request with HTTP 401.
-- [ ] Publish the prepared [manual backend deployment workflow](openclaw-meta-glasses/deploy/github-deploy.yml)
-  as `.github/workflows/deploy-meta-glasses.yml` in this repository for future
-  deployments. The same deployment script has already run successfully by SSH.
+  Both checks passed from a GitHub-hosted runner and from the relay's Node HTTP
+  client. The deployment probe identifies itself as
+  `OpenClaw-Glasses-Deployment/1.0`; Cloudflare rejects Python's default user-agent.
+- [x] Publish the [manual backend deployment workflow](https://github.com/8exgh/devops/actions/workflows/deploy-openclaw-glasses.yml)
+  in `8exgh/devops`, where the existing `openclaw-dc` fleet runner is registered.
+  It deploys the glasses backend, validates it, and installs the backup timer.
+  The workflow shares the existing fleet deployment lock.
+  [Successful backend deployment and verification](https://github.com/8exgh/devops/actions/runs/33992009013).
 
-The workflow files are prepared but cannot yet be published: GitHub's current
-CLI login has `repo` access without `workflow` access, and the connected GitHub
-app needs reauthentication. Run `gh auth refresh -h github.com -s workflow` in
-your terminal, then resume this task to finish publication and public routing.
-The backend and its backups are running while this access step is pending.
+Completed September 5, 2026. Use `https://glasses.fusenv.com` as the relay origin
+in the remaining app and tenant setup steps. Push credentials and enabling the
+tenant's glasses capability remain in sections 3 and 4.
 
 ## 3. Configure iPhone push notifications
 
@@ -123,13 +126,13 @@ inbox and active listening session can be tested before push is configured.
 ## 4. Connect openclaw1 and the iPhone
 
 - [ ] Enable summaries from tasks completed in other channels. On the fleet
-  host, substitute the real HTTPS origin and run:
+  host, run:
 
   ```bash
   cd /home/openclaw/managed-openclaw/openclaw-meta-glasses
   node integration/connect-tenant.mjs \
     /home/openclaw/managed-openclaw/tenants/openclaw1 \
-    https://glasses.your-domain.example
+    https://glasses.fusenv.com
   cd ..
   npm ci
   npm run cli -- enable openclaw1 glasses
@@ -139,7 +142,7 @@ inbox and active listening session can be tested before push is configured.
   restarts `openclaw1` with the two glasses environment variables.
 - [ ] Build and install the updated existing app on the iPhone. Sign in with the
   existing 8examples account and select `openclaw1`.
-- [ ] Open **Glasses → Connection settings**, enter the relay's HTTPS origin,
+- [ ] Open **Glasses → Connection settings**, enter `https://glasses.fusenv.com`,
   and connect. Alternatively, set `OPENCLAW_GLASSES_RELAY_URL` in the existing
   `Info.plist` before building. There is no separate glasses login.
 - [ ] Enable **Notify me when work is done** and allow iOS notifications after

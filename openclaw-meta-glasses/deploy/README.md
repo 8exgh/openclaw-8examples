@@ -2,9 +2,9 @@
 
 The fleet checkout is `/home/openclaw/managed-openclaw`. The relay runs as
 `openclaw-meta-glasses-relay-1` and listens only on `127.0.0.1:8795` on the host.
-Its intended public origin is `https://glasses.fusenv.com`, through the existing
-`cloudflared-hooks` tunnel. See [the checklist](../../todo-meta-glasses.md) for
-the current public routing status.
+Its public origin is **https://glasses.fusenv.com**, through the existing
+`cloudflared-hooks` tunnel. Public health and unauthenticated-access checks pass.
+See [the checklist](../../todo-meta-glasses.md) for the remaining app setup.
 
 After pulling a reviewed release, run on the fleet host:
 
@@ -19,15 +19,27 @@ waits for its health check, and installs the backup timer. It verifies Docker
 access to `openclaw-openclaw1` without running an assistant task. Push credentials
 and enabling the tenant's glasses capability remain separate checklist steps.
 
-`github-deploy.yml` is the prepared manual workflow for
-`8exgh/openclaw-8examples/.github/workflows/deploy-meta-glasses.yml`.
-`github-cloudflare.yml` is the prepared manual workflow for
-`8exgh/devops/.github/workflows/configure-openclaw-glasses-cloudflare.yml`, where
-the existing DNS and tunnel API secrets are stored. Neither template executes
-from this folder. Publishing workflow files requires GitHub `workflow` access.
+Both manual GitHub workflows are published in `8exgh/devops`, where the fleet
+runner and Cloudflare secrets are configured:
+
+- [Deploy OpenClaw glasses backend](https://github.com/8exgh/devops/actions/workflows/deploy-openclaw-glasses.yml)
+  runs `deploy.sh` and verifies public HTTPS. It shares the fleet deployment lock.
+- [Configure OpenClaw glasses Cloudflare route](https://github.com/8exgh/devops/actions/workflows/configure-openclaw-glasses-cloudflare.yml)
+  configures the tunnel and DNS, then verifies access from a GitHub-hosted runner.
+
+`github-deploy.yml` and `github-cloudflare.yml` are copies of those published
+workflows for reference; they do not execute from this folder. To redeploy:
+
+```bash
+gh workflow run deploy-openclaw-glasses.yml --repo 8exgh/devops --ref main
+```
+
 The Cloudflare workflow preserves existing tunnel rules, refuses to overwrite
 an unrelated DNS record, and checks public HTTPS and authentication after setup.
 It follows [Cloudflare's tunnel configuration and DNS API](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel-api/).
+The health probe uses `User-Agent: OpenClaw-Glasses-Deployment/1.0` because the
+zone rejects Python's default user-agent with error 1010. Curl and the relay's
+Node HTTP client also pass the public API checks.
 
 ## Scheduled backups
 

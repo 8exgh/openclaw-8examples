@@ -21,7 +21,7 @@ jobs:
           CF_DNS_TOKEN: ${{ secrets.CLOUDFLARE_DNS_API_TOKEN }}
         run: |
           python3 - <<'PY'
-          import copy, json, os, time, urllib.request
+          import copy, json, os, time, urllib.error, urllib.request
 
           api = 'https://api.cloudflare.com/client/v4'
           account = 'be2484925dc7150169c09e6770fb7e38'
@@ -74,19 +74,26 @@ jobs:
               request(records_path, dns_token, 'POST', desired_dns)
           records = request(records_path + '?name=' + hostname, dns_token)
           assert len(records) == 1 and all(records[0].get(k) == desired_dns[k] for k in ('type', 'content', 'proxied')), 'DNS verification failed'
-          print('Configured https://' + hostname + ' -> ' + origin + '; existing tunnel rules preserved')
+          print('Configured https://' + hostname + ' -> ' + origin + '; existing tunnel rules preserved', flush=True)
+
+          def public_request(path):
+              # Identify this legitimate API probe; the zone rejects Python's default user-agent.
+              req = urllib.request.Request('https://' + hostname + path,
+                  headers={'User-Agent': 'OpenClaw-Glasses-Deployment/1.0'})
+              return urllib.request.urlopen(req, timeout=10)
 
           for attempt in range(30):
               try:
-                  with urllib.request.urlopen('https://' + hostname + '/health', timeout=10) as response:
+                  with public_request('/health') as response:
                       assert response.status == 200 and json.load(response) == {'ok': True}
                   break
-              except Exception:
+              except Exception as error:
+                  print('Health probe retry:', type(error).__name__, getattr(error, 'code', ''), flush=True)
                   if attempt == 29:
                       raise RuntimeError('Public HTTPS health check did not pass') from None
                   time.sleep(5)
           try:
-              urllib.request.urlopen('https://' + hostname + '/v1/me', timeout=10)
+              public_request('/v1/me')
           except urllib.error.HTTPError as error:
               assert error.code == 401, 'Expected authentication rejection'
           else:
