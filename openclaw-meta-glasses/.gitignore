@@ -4,3 +4,5 @@ config.local.json
 data/
 .build/
 node_modules/
+secrets/
+__pycache__/

@@ -6,6 +6,10 @@ requests, spoken replies, and completion summaries alongside its existing chat,
 location, website, phone and connection features. There is one app target and
 one App Store identity; this folder contains the relay and tenant integration.
 
+Fleet deployment status and remaining setup are tracked in
+[todo-meta-glasses.md](../todo-meta-glasses.md). The
+[operations runbook](deploy/README.md) covers deployment and daily backups.
+
 This implementation targets **iOS 17+ with paired Bluetooth HFP glasses**. It
 uses the existing 8examples login, a fleet-hosted relay, and Apple speech/audio
 APIs. Meta documents microphone/speaker access through the paired phone's

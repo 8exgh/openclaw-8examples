@@ -1,10 +1,11 @@
 # Meta glasses: remaining setup and verification
 
 The implementation is in the existing iPhone app, with one new backend in
-`openclaw-meta-glasses/`. The source work is complete; the relay has not been
-deployed, push credentials have not been configured, and the iOS build and
-paired-glasses checks still need to be done. Backend/fleet validation passed
-30 tests, TypeScript checking, and backend syntax checking on September 5, 2026.
+`openclaw-meta-glasses/`. The relay is running on the fleet host with verified
+daily backups. Public HTTPS routing is still pending GitHub workflow access.
+Push credentials, the iOS build, and paired-glasses checks still need to be done.
+Backend/fleet validation passed 30 tests, TypeScript checking, and backend syntax
+checking on September 5, 2026; two additional backup tests now pass as well.
 
 Use the [backend README](openclaw-meta-glasses/README.md) for configuration details
 and the [iPhone README](openclaw-iphone/README.md) for the existing app.
@@ -34,13 +35,13 @@ and the [iPhone README](openclaw-iphone/README.md) for the existing app.
 
 ## 2. Deploy the new backend on the fleet host
 
-- [ ] Choose a public HTTPS hostname for the relay, point its DNS at the fleet
-  host, and configure TLS with the existing reverse proxy. Replace
-  `glasses.your-domain.example` below with that real hostname.
-- [ ] Pull the committed source into `/home/openclaw/managed-openclaw` on the
-  fleet host. Confirm Docker can access `openclaw-openclaw1` and the host has
-  Node 22.18+ for the setup commands.
-- [ ] Generate the private relay configuration:
+- [x] Choose `glasses.fusenv.com` as the public hostname. The fleet host uses
+  Cloudflare Tunnel; its connector runs with host networking, so the relay
+  origin will be `http://127.0.0.1:8795`.
+- [x] Pull the committed integration into `/home/openclaw/managed-openclaw` on
+  the fleet host (`72.251.7.26`). Verified Node `v22.23.2`, Docker `29.1.3`, and
+  access to the running `openclaw-openclaw1` from inside the relay container.
+- [x] Generate the private relay configuration for `openclaw1`:
 
   ```bash
   cd /home/openclaw/managed-openclaw/openclaw-meta-glasses
@@ -50,7 +51,9 @@ and the [iPhone README](openclaw-iphone/README.md) for the existing app.
 
   This creates `.env` and `config.local.json`, preserving keys on later runs.
   Leave `IDENTITY_URL=https://8examples.com` for the existing production login.
-- [ ] Start the single relay service:
+- [x] Start the single relay service. `openclaw-meta-glasses-relay-1` is healthy,
+  configured to restart automatically, and bound only to `127.0.0.1:8795`.
+  Its local `/health` returns HTTP 200 with `{"ok":true}`.
 
   ```bash
   docker compose up -d --build
@@ -58,21 +61,34 @@ and the [iPhone README](openclaw-iphone/README.md) for the existing app.
   curl --fail http://127.0.0.1:8795/health
   ```
 
-- [ ] Route the public HTTPS hostname to `127.0.0.1:8795`. For Caddy, the site
-  configuration is:
+- [x] Update the backend to patched Fastify `5.12.3` and fast-uri dependencies.
+  All ten relay tests pass on the fleet host, and the installed dependencies
+  report zero vulnerabilities in `npm audit`.
+- [x] Install and verify daily private backups. `openclaw-glasses-backup.timer`
+  runs at 03:30 fleet-host time with up to 15 minutes of jitter, retains 14 days,
+  and catches up after downtime. Archives are in
+  `/home/openclaw/openclaw-backups/meta-glasses` (root-owned, directory 0700,
+  archives 0600). A production archive was restored to a temporary database
+  and passed integrity and checksum checks. Archives contain `.env`,
+  `config.local.json`, and a consistent SQLite snapshot. APNs keys will be
+  included automatically once added to `secrets/` in step 3. Only one relay
+  process uses the database. See the [operations runbook](openclaw-meta-glasses/deploy/README.md).
+- [ ] Publish and run the prepared [Cloudflare workflow](openclaw-meta-glasses/deploy/github-cloudflare.yml)
+  as `.github/workflows/configure-openclaw-glasses-cloudflare.yml` in
+  `8exgh/devops`. It uses that repository's existing DNS and tunnel secrets to
+  add a proxied CNAME and ingress rule on tunnel
+  `a96d6a4a-940c-47e2-bd82-479bbfc07884`, preserving all existing routes.
+- [ ] Verify `https://glasses.fusenv.com/health` from outside the fleet host
+  returns HTTP 200 and `/v1/me` rejects an unauthenticated request with HTTP 401.
+- [ ] Publish the prepared [manual backend deployment workflow](openclaw-meta-glasses/deploy/github-deploy.yml)
+  as `.github/workflows/deploy-meta-glasses.yml` in this repository for future
+  deployments. The same deployment script has already run successfully by SSH.
 
-  ```caddyfile
-  glasses.your-domain.example {
-      reverse_proxy 127.0.0.1:8795
-  }
-  ```
-
-- [ ] Check `https://glasses.your-domain.example/health` from outside the host.
-  Keep the relay port bound to loopback and Docker access local to the host.
-- [ ] Arrange private backups of `.env`, `config.local.json`, the APNs key,
-  and `data/`. Back up SQLite using its backup facilities or with the relay
-  stopped. Keep the encryption key with the database backup so queued sessions
-  can be recovered. Run only one relay process per database.
+The workflow files are prepared but cannot yet be published: GitHub's current
+CLI login has `repo` access without `workflow` access, and the connected GitHub
+app needs reauthentication. Run `gh auth refresh -h github.com -s workflow` in
+your terminal, then resume this task to finish publication and public routing.
+The backend and its backups are running while this access step is pending.
 
 ## 3. Configure iPhone push notifications
 

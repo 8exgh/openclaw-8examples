@@ -12,6 +12,6 @@
     "check": "node --check server/app.mjs && node --check server/store.mjs && node --check server/worker.mjs && node --check server/apns.mjs && node --check server/index.mjs"
   },
   "dependencies": {
-    "fastify": "5.11.3"
+    "fastify": "5.12.3"
   }
 }
