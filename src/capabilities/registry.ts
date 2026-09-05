@@ -173,8 +173,8 @@ read back a transcript annotated with how the person spoke.
 
 ## How this integration is accessed
 
-Use your \`exec\` tool to run the authenticated HTTP requests below. Outbound
-calls use \`POST $PHONE_GATEWAY_URL/orchestrations\`; SMS uses \`POST /sms\`.
+Use your \`exec\` tool to run \`node phone/gateway.mjs\` as shown below. Outbound
+calls use \`POST /orchestrations\`; SMS uses \`POST /sms\`.
 The phone gateway is an external service already configured for this tenant.
 It does not require a native OpenClaw voice plugin, channel, or phone tool.
 The \`openclaw\` setup assistant and plugin catalog do not describe this
@@ -186,9 +186,20 @@ disabled or required a plugin, check the live gateway and correct that reply.
 Report a concrete HTTP/tool error if a request fails; do not infer that calls
 are unavailable from the absence of a native telephony tool.
 
-EVERY request to the gateway must send your token:
--H "Authorization: Bearer $PHONE_GATEWAY_API_KEY"
-(add it to each curl below; examples omit it for brevity).
+The managed helper automatically reads the real credential from the process
+environment and authenticates EVERY request, including polling and callbacks.
+Do not construct authorization headers yourself, copy a token from chat, or
+use a masked value such as \`***\`. Transcript redaction masks header examples;
+those masks are not working credentials. Do not edit the helper.
+
+Usage: \`node phone/gateway.mjs METHOD /path [json-file]\`.
+Write request bodies as JSON files using your file-writing tool, then pass the
+file path; this avoids shell quoting errors in names, goals, and message text.
+Output is \`{"status":200,"body":...}\`; the helper exits nonzero on HTTP errors.
+Read the \`body\` field for the API responses described below. It never retries
+requests automatically. After a POST timeout, check call history before retrying
+so you do not dial twice. A 401 means to run the helper's GET /numbers check;
+do not assume write permissions or credential rotation without that evidence.
 
 Your account is bound to ONE phone number, used automatically for all calls
 and texts (never pass "from"). SMS is included in this capability; it does
@@ -201,34 +212,37 @@ The authenticated gateway is the source of truth. If your number is unknown,
 or the owner asks whether it is still connected, check it with this read-only
 request BEFORE saying you have no number or offering to register one:
 
-    curl --fail-with-body --silent --show-error --max-time 15 "$PHONE_GATEWAY_URL/numbers" \\
-      -H "Authorization: Bearer $PHONE_GATEWAY_API_KEY"
+    node phone/gateway.mjs GET /numbers
 
 The response is an array of your own numbers; use its \`phoneNumber\` field.
 A non-empty array means you already have a number for calls AND texts.
 An HTTP error, timeout, or missing credential means verification failed, not
 that no number exists. Explain that connection problem; do not buy a replacement.
 If the array is empty but you remember a number, check authenticated
-\`GET /accounting\` (\`account.phoneNumber\`) and flag any mismatch for operations.
+\`node phone/gateway.mjs GET /accounting\` (\`body.account.phoneNumber\`) and flag
+any mismatch for operations.
 
 Only register a number when the gateway confirms none is assigned and the
 owner has authorized provisioning. Register once — it falls back to same-city
 overlay area codes when yours is dry:
 
-    curl -s -X POST "$PHONE_GATEWAY_URL/numbers" \\
-      -H "Authorization: Bearer $PHONE_GATEWAY_API_KEY" \\
-      -H 'content-type: application/json' -d '{"areaCode": "204"}'
+Write \`phone/number-request.json\` with \`{"areaCode":"204"}\`, then:
+
+    node phone/gateway.mjs POST /numbers phone/number-request.json
 
 Limits: 1 number, 90 call-hours per month (over quota: outbound gets HTTP
 429 and incoming calls are rejected until next month). Check your usage and
-charges anytime: curl -s "$PHONE_GATEWAY_URL/accounting".
+charges anytime: \`node phone/gateway.mjs GET /accounting\`.
 
 ## Make a call (one-shot orchestration)
 
-    curl -s -X POST "$PHONE_GATEWAY_URL/orchestrations" \\
-      -H "Authorization: Bearer $PHONE_GATEWAY_API_KEY" \\
-      -H 'content-type: application/json' \\
-      -d '{"to": "+15551234567", "goal": "Book a table for 2 at 7pm Friday under Ana. Get a confirmation.", "openingLine": "Hi! I am calling to book a table."}'
+Write \`phone/call-request.json\` with the authorized destination and goal:
+
+    {"to": "+15551234567", "goal": "Book a table for 2 at 7pm Friday under Ana. Get a confirmation.", "openingLine": "Hi! I am calling to book a table."}
+
+Then execute:
+
+    node phone/gateway.mjs POST /orchestrations phone/call-request.json
 
 Fields: "to" (E.164, required), "goal" (what the voice agent should achieve),
 "openingLine" (optional fixed first sentence), "voice" (optional).
@@ -237,8 +251,9 @@ Omit "from"; the gateway uses your assigned number. Immediate 202 response conta
 
 ## Poll for the result
 
-    curl -s "$PHONE_GATEWAY_URL/orchestrations/<orchestrationId>"
+    node phone/gateway.mjs GET '/orchestrations/<orchestrationId>'
 
+Replace the placeholder with the returned orchestration id.
 Poll every few seconds until "status" is "ended" or "failed".
 - "liveTranscript" fills while the call runs; "turns" is the full
   conversation once it ends.
@@ -258,10 +273,10 @@ record's statusUrl every 2-3 seconds; when pendingRequests has an entry
 with status "open", execute it with whatever capability matches (names are
 hints - run_bash means your shell, ask_assistant means you), then:
 
-    curl -s -X POST "$PHONE_GATEWAY_URL/orchestrations/<id>/respond" \
-      -H "Authorization: Bearer $PHONE_GATEWAY_API_KEY" \
-      -H 'content-type: application/json' \
-      -d '{"requestId": "<request id>", "result": "<what you found, concisely>"}'
+Write \`phone/tool-response.json\` with
+\`{"requestId":"<request id>","result":"<what you found, concisely>"}\`, then:
+
+    node phone/gateway.mjs POST '/orchestrations/<id>/respond' phone/tool-response.json
 
 Be fast - the agent holds ~25 seconds. If you miss the window, the agent
 tells the caller it will call them back immediately and hangs up; the
@@ -303,7 +318,9 @@ the other side presses appear as [pressed 42] caller turns.
 
 If you want to decide each line instead of delegating to the built-in brain:
 
-    curl -s -X POST "$PHONE_GATEWAY_URL/calls" -H 'content-type: application/json' -d '{"to": "+15551234567"}'
+Write \`phone/call-request.json\` with \`{"to":"+15551234567"}\`, then:
+
+    node phone/gateway.mjs POST /calls phone/call-request.json
 
 then connect a WebSocket to wss://<gateway-host>/control/<callId> and send
 JSON: {"type":"say","id":"s1","text":"..."} (FIFO queue),
@@ -314,16 +331,18 @@ transcript.delta, transcript (final + prosody), and dtmf events.
 
 ## SMS
 
+Write \`phone/sms-request.json\` with the approved message:
+
+    {"to": "+15551234567", "body": "Your table for 2 at 7pm Friday is booked."}
+
 Send:
 
-    curl -s -X POST "$PHONE_GATEWAY_URL/sms" \\
-      -H 'content-type: application/json' \\
-      -d '{"to": "+15551234567", "body": "Your table for 2 at 7pm Friday is booked."}'
+    node phone/gateway.mjs POST /sms phone/sms-request.json
 
 Omit "from"; the gateway uses the same assigned number as your calls.
 Receive by polling (inbound messages appear here; there is no push):
 
-    curl -s "$PHONE_GATEWAY_URL/sms?days=7&limit=50"
+    node phone/gateway.mjs GET '/sms?days=7&limit=50'
 
 Filter for "direction": "inbound" and your number in "to". Poll GET /sms
 when expecting a reply.
@@ -337,14 +356,18 @@ polling. You never react to a ring in real time.
 Register/update your answering persona (do this once, and again if your
 person changes what you should say):
 
-    curl -s -X POST "$PHONE_GATEWAY_URL/inbound-config" \\
-      -H 'content-type: application/json' \\
-      -d '{"goal": "You are answering on behalf of <your person>. Find out who is calling and why, take a message with callback details, keep it brief.", "openingLine": "Hi! Who am I speaking with?"}'
+Write \`phone/inbound-config.json\` with:
+
+    {"goal": "You are answering on behalf of <your person>. Find out who is calling and why, take a message with callback details, keep it brief.", "openingLine": "Hi! Who am I speaking with?"}
+
+Then execute:
+
+    node phone/gateway.mjs POST /inbound-config phone/inbound-config.json
 
 On your heartbeat, check for new answered calls and follow up on anything
 that needs action (a message to relay, a callback to make):
 
-    curl -s "$PHONE_GATEWAY_URL/orchestrations?direction=inbound"
+    node phone/gateway.mjs GET '/orchestrations?direction=inbound'
 
 Each entry has "from" (the caller), "startedAt", "status", and a
 "statusUrl" for the full transcript. History and your answering persona are

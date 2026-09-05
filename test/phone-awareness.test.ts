@@ -30,7 +30,7 @@ test('phone awareness follows the tenant gateway, survives renders, and never ex
   const agents = () => readFileSync(path.join(workspace, 'AGENTS.md'), 'utf8');
   renderTenant(tenant, fleet);
   assert.match(agents(), /BOTH calls and SMS/);
-  assert.match(agents(), /GET \$PHONE_GATEWAY_URL\/numbers/);
+  assert.match(agents(), /node phone\/gateway\.mjs GET \/numbers/);
   assert.doesNotMatch(agents(), /Your assigned assistant phone number/);
   assert.doesNotMatch(agents().split('## What you can offer to unlock')[1], /\*\*Text messaging \(SMS\)\*\*/);
 
@@ -48,6 +48,7 @@ test('phone awareness follows the tenant gateway, survives renders, and never ex
   const configBefore = readFileSync(path.join(dir, 'config/openclaw.json'), 'utf8');
   const envBefore = readFileSync(path.join(dir, '.env'), 'utf8');
   assert.equal(await syncPhoneAccount(tenant), '+15555550123');
+  assert.match(readFileSync(path.join(workspace, 'phone/gateway.mjs'), 'utf8'), /export async function requestGateway/);
   assert.match(agents(), /Your assigned assistant phone number: \*\*\+15555550123\*\*/);
   assert.doesNotMatch(agents(), /15555550199/); // The owner's contact is not the assistant's number.
   const accountFile = path.join(workspace, 'phone/account.json');

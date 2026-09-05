@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { capability } from './capabilities/registry.js';
-import { parseEnv, renderAgentInstructions } from './provisioner/render.js';
+import { installPhoneGatewayHelper, parseEnv, renderAgentInstructions } from './provisioner/render.js';
 import { tenantDir } from './store.js';
 import type { Tenant } from './types.js';
 
@@ -37,6 +37,7 @@ export async function syncPhoneAccount(tenant: Tenant): Promise<string | null> {
   }, null, 2) + '\n');
   mkdirSync(path.join(workspace, 'capabilities'), { recursive: true });
   writeFileSync(path.join(workspace, 'capabilities', 'phone.md'), capability('phone').workspaceDoc);
+  installPhoneGatewayHelper(tenant);
   renderAgentInstructions(tenant);
   return phoneNumber;
 }

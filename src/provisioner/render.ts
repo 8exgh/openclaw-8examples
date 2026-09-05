@@ -35,7 +35,7 @@ function ensureDirForContainer(dir: string, mode = 0o755): void {
 }
 
 /** Bump when the managed layer changes in a way not captured by template files. */
-export const MANAGED_LAYER_VERSION = '0.1.3';
+export const MANAGED_LAYER_VERSION = '0.1.4';
 
 /** Credentials capable of funding model calls; suppressed inventory may not mount any of them. */
 export const MODEL_CREDENTIAL_KEYS = [
@@ -533,11 +533,12 @@ function capabilitySections(tenant: Tenant, workspace: string): { enabled: strin
         } catch { /* Not synchronized yet: use the authenticated lookup below. */ }
         line += number ? `\n  - Your assigned assistant phone number: **${number}** (last verified in \`phone/account.json\`).` : '';
         line += '\n  - This gateway supports BOTH calls and SMS using your assigned number. ' +
-          'Read `capabilities/phone.md` and use authenticated `GET $PHONE_GATEWAY_URL/numbers` ' +
+          'Read `capabilities/phone.md` and run `node phone/gateway.mjs GET /numbers` ' +
           'before claiming no number is configured or offering to register one. ' +
           'A failed lookup does not mean the number is missing. Ignore older SMS setup offers.';
-        line += '\n  - To make an authorized call, use your `exec` tool to POST to ' +
-          '`$PHONE_GATEWAY_URL/orchestrations` following `capabilities/phone.md`. ' +
+        line += '\n  - To make an authorized call, write its JSON request to `phone/call-request.json`, then use `exec` to run ' +
+          '`node phone/gateway.mjs POST /orchestrations phone/call-request.json`. ' +
+          'The helper adds authentication from the environment; never copy masked headers or tokens from chat. ' +
           'This external gateway needs no native voice plugin or phone tool. ' +
           'Do not ask the `openclaw` setup assistant to unlock it: its plugin catalog does not ' +
           'describe this integration. Correct earlier chat claims that calling is disabled ' +
@@ -568,6 +569,17 @@ export function renderAgentInstructions(tenant: Tenant): Record<string, string> 
   };
   writeFileSync(path.join(workspace, 'AGENTS.md'), template('workspace/AGENTS.md', vars));
   return vars;
+}
+
+/** Install the managed client without touching the agent's phone tasks/history. */
+export function installPhoneGatewayHelper(tenant: Tenant): void {
+  const dir = path.join(tenantDir(tenant.id), 'workspace', 'phone');
+  if (!tenant.capabilities.phone?.enabled) {
+    rmSync(path.join(dir, 'gateway.mjs'), { force: true });
+    return;
+  }
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, 'gateway.mjs'), readFileSync(path.join(TEMPLATES_DIR, 'workspace', 'phone', 'gateway.mjs')));
 }
 
 /**
@@ -708,6 +720,7 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
   );
 
   const vars = renderAgentInstructions(tenant);
+  installPhoneGatewayHelper(tenant);
   writeFileSync(path.join(workspace, 'HEARTBEAT.md'), template('workspace/HEARTBEAT.md', vars));
 
   const soul = path.join(workspace, 'SOUL.md');
