@@ -14,3 +14,4 @@ data/
 
 # shared read-only browser cache (large, host-local)
 shared/
+artifacts/

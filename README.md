@@ -32,6 +32,12 @@ deployment, signing, and device verification steps.
 
 ## Quickstart
 
+Managed container Claws can hand their existing browser to the owner for login:
+they create an expiring `8examples.com/remote-connect/<uuid>` link and six-digit
+code, then wait while the owner signs in directly. **Done — return control**
+disconnects the viewer and preserves the login for the Claw. See the
+[remote login setup and end-to-end test](remote-connect/README.md).
+
 ```bash
 npm install
 
