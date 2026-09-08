@@ -39,7 +39,7 @@ try {
     }
     const result = JSON.parse(stdout);
     const text = (result.result?.payloads || result.payloads || []).map((item) => item.text || '').join('\n');
-    assert.doesNotMatch(text, /https?:\/\/(?:localhost|127\.\d+\.\d+\.\d+|\[::1\])\b/i, 'The Claw must not offer an internal portal URL');
+    assert.ok(!/https?:\/\/(?:localhost|127\.\d+\.\d+\.\d+|\[::1\])(?=[:/\s]|$)/i.test(text), 'The Claw must not offer an internal portal URL');
     const url = text.match(/https:\/\/8examples\.com\/remote-connect\/[0-9a-f-]{36}/)?.[0];
     const code = text.match(/\b\d{6}\b/)?.[0];
     assert.ok(url && code, 'The Claw must contextually create and return a remote URL and six-digit code');
