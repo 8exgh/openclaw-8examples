@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -36,7 +36,10 @@ test('runtime configuration preserves other plugins and owner configuration', (t
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   mkdirSync(path.join(dir, 'config'));
   const file = path.join(dir, 'config/openclaw.json');
-  writeFileSync(file, JSON.stringify({ commands: { ownerAllowFrom: ['owner'] }, plugins: { allow: ['example'], load: { paths: ['/existing'] }, entries: { example: { enabled: true } } } }));
+  const legacy = path.join(dir, 'config/extensions/managed-remote-login');
+  mkdirSync(legacy, { recursive: true });
+  writeFileSync(path.join(legacy, 'index.mjs'), '// previous managed plugin');
+  writeFileSync(file, JSON.stringify({ commands: { ownerAllowFrom: ['owner'] }, plugins: { allow: ['example'], load: { paths: ['/existing', '/home/node/.openclaw/extensions/managed-remote-login'] }, entries: { example: { enabled: true }, 'managed-remote-login': { config: { revision: 'previous' } } } } }));
   installRemoteRuntime(dir);
   const once = readFileSync(file, 'utf8');
   installRemoteRuntime(dir);
@@ -45,10 +48,14 @@ test('runtime configuration preserves other plugins and owner configuration', (t
   assert.deepEqual(config.commands.ownerAllowFrom, ['owner']);
   assert.equal(config.plugins.entries.example.enabled, true);
   assert.equal(config.plugins.entries['managed-remote-login'].hooks.allowConversationAccess, true);
-  assert.match(config.plugins.entries['managed-remote-login'].config.revision, /^[0-9a-f]{64}$/);
+  assert.equal(config.plugins.entries['managed-remote-login'].config, undefined);
   assert.deepEqual(config.plugins.allow, ['example', 'managed-remote-login']);
   assert.equal(config.plugins.load.paths[0], '/existing');
-  assert.ok(readFileSync(path.join(dir, 'config/extensions/managed-remote-login/index.mjs'), 'utf8').includes('before_prompt_build'));
+  assert.equal(config.plugins.load.paths.length, 2);
+  assert.equal(existsSync(legacy), false);
+  const location = config.plugins.load.paths[1];
+  assert.match(location, /\/managed-plugins\/managed-remote-login\/[0-9a-f]{64}$/);
+  assert.ok(readFileSync(path.join(dir, 'config', location.replace('/home/node/.openclaw/', ''), 'index.mjs'), 'utf8').includes('before_prompt_build'));
 });
 
 test('false browser handoff directions are distinguished from normal technical answers', () => {

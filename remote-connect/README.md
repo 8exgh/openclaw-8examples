@@ -94,8 +94,9 @@ implementation. It does not automatically send a chat message on Done.
    Set `runtime_hooks=true` to install the native handoff plugin too. This
    changes the Claw's plugin configuration; OpenClaw reloads its gateway when
    idle. Start with the canary, then roll out with `all_tenants=true`.
-   Plugin code updates carry a content revision in configuration so an
-   already-running gateway reloads the new hooks.
+   Plugin code updates use a content-addressed load path so an already-running
+   gateway loads the new hooks. This also bypasses the old manifest cache;
+   adding a revision property to plugin config can be rejected by that cache.
 
 Server7 must be able to reach the fleet's private Tailscale address (including
 from `nextjs-8examples`); the deployment verification fails if the route or tailnet

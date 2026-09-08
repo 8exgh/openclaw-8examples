@@ -2,7 +2,7 @@
 // API. No real Telegram tokens, recipients, model credentials, or browser data.
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -46,6 +46,11 @@ try {
   mkdirSync(path.join(workspace, 'remote-connect'), { recursive: true });
   writeFileSync(path.join(workspace, 'remote-connect/session.mjs'), `console.log(JSON.stringify({url:'https://8examples.com/remote-connect/00000000-0000-4000-8000-000000000000',code:'000123',expiresAt:'2099-01-01T00:00:00Z'}));`);
   const config = path.join(dir, 'config.json');
+  const oldPlugin = path.join(dir, 'old-plugin');
+  mkdirSync(oldPlugin);
+  writeFileSync(path.join(oldPlugin, 'package.json'), JSON.stringify({ name: 'old-remote-fixture', type: 'module', openclaw: { extensions: ['./index.mjs'] } }));
+  writeFileSync(path.join(oldPlugin, 'openclaw.plugin.json'), JSON.stringify({ id: 'managed-remote-login', activation: { onStartup: true }, configSchema: { type: 'object', additionalProperties: false, properties: {} } }));
+  writeFileSync(path.join(oldPlugin, 'index.mjs'), `export default { id:'managed-remote-login', register(api) { api.on('before_prompt_build', () => ({appendSystemContext:'public remote browser login is INSTALLED and AUTHORIZED'})); } };`);
   writeFileSync(config, JSON.stringify({
     gateway: { mode: 'local', port, bind: 'loopback', auth: { mode: 'token', token: 'synthetic-gateway-test-only' } },
     agents: { defaults: { workspace, model: { primary: 'mock/mock' } } },
@@ -53,7 +58,7 @@ try {
     channels: { telegram: { enabled: true, botToken: '123456:synthetic-fixture-token', apiRoot: endpoint, dmPolicy: 'allowlist', allowFrom: ['777'], streaming: { mode: 'off' } } },
     browser: { enabled: false, profiles: { openclaw: { cdpUrl: endpoint } } },
     models: { providers: { mock: { baseUrl: endpoint+'/v1', apiKey: 'synthetic-model-key', api: 'openai-completions', models: [{ id: 'mock', name: 'Mock', contextWindow: 32000, maxTokens: 4096 }] } } },
-    plugins: { allow: ['telegram', 'managed-remote-login'], load: { paths: [process.argv[2]] }, entries: { telegram: { enabled: true }, 'managed-remote-login': { enabled: true, hooks: { allowConversationAccess: true, allowPromptInjection: true } } } },
+    plugins: { allow: ['telegram', 'managed-remote-login'], load: { paths: [oldPlugin] }, entries: { telegram: { enabled: true }, 'managed-remote-login': { enabled: true, hooks: { allowConversationAccess: true, allowPromptInjection: true } } } },
   }));
   const env = { PATH: process.env.PATH, OPENCLAW_CONFIG_PATH: config, OPENCLAW_STATE_DIR: path.join(dir, 'state') };
   await exec('openclaw', ['plugins', 'enable', 'telegram', '--accept-capabilities'], { env, timeout: 60000, maxBuffer: 65536 });
@@ -67,6 +72,16 @@ try {
   }
   let nextUpdate = 1000;
   const send = text => updates.push({ update_id: ++nextUpdate, message: { message_id: nextUpdate, date: Math.floor(Date.now()/1000), from: { id: 777, is_bot: false, first_name: 'Fixture' }, chat: { id: 777, type: 'private', first_name: 'Fixture' }, text } });
+  send('I’m confused about the browser.');
+  for (let i=0; i<150 && !delivered.length; i++) await new Promise(resolve => setTimeout(resolve, 200));
+  assert.ok(delivered.some(text => /private server/i.test(text)), 'The legacy fixture must reproduce the original failure');
+  const update = JSON.parse(readFileSync(config, 'utf8'));
+  update.plugins.load.paths = [process.argv[2]];
+  writeFileSync(config, JSON.stringify(update));
+  for (let i=0; i<300 && !startup.includes('managed-remote-login active'); i++) await new Promise(resolve => setTimeout(resolve, 200));
+  assert.ok(startup.includes('managed-remote-login active'), 'The existing gateway must load the replacement plugin after its path changes: '+startup);
+  console.log('PASS: a running gateway with the old manifest schema reloads the new plugin generation.');
+  delivered.length = 0;
   send('Give me a fresh browser login link.');
   for (let i=0; i<150 && !delivered.length; i++) await new Promise(resolve => setTimeout(resolve, 200));
   assert.ok(delivered.some(text => text.includes('https://8examples.com/remote-connect/') && text.includes('000123')), 'Native Telegram must deliver the helper handoff: '+JSON.stringify({ delivered, requests: modelRequests.length, startup }));

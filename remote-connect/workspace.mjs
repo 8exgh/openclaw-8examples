@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { chmodSync, chownSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, chownSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const templates = new URL('../templates/workspace/', import.meta.url);
@@ -10,9 +10,17 @@ export function remoteInstructions() {
 export function installRemoteRuntime(dir) {
   const configFile = path.join(dir, 'config/openclaw.json');
   if (!existsSync(configFile)) return;
-  const pluginDir = path.join(dir, 'config/extensions/managed-remote-login');
+  // A new module path bypasses the running gateway's manifest/module caches.
+  // Keep the revision outside plugin config: the old cached schema must still
+  // accept the update before OpenClaw can restart into the new generation.
+  const names = ['index.mjs', 'package.json', 'openclaw.plugin.json'];
+  const hash = createHash('sha256');
+  for (const name of names) hash.update(readFileSync(new URL(`./plugin/${name}`, import.meta.url)));
+  const revision = hash.digest('hex');
+  const relative = `managed-plugins/managed-remote-login/${revision}`;
+  const pluginDir = path.join(dir, 'config', relative);
   mkdirSync(pluginDir, { recursive: true });
-  for (const name of ['index.mjs', 'package.json', 'openclaw.plugin.json']) {
+  for (const name of names) {
     const file = path.join(pluginDir, name);
     writeFileSync(file, readFileSync(new URL(`./plugin/${name}`, import.meta.url)));
     if (process.getuid?.() === 0) chownSync(file, 1000, 1000);
@@ -22,16 +30,17 @@ export function installRemoteRuntime(dir) {
   const before = JSON.stringify(config);
   config.plugins ??= {};
   config.plugins.entries ??= {};
-  // Changing hook code must invalidate OpenClaw's loaded plugin generation;
-  // copying new files alone leaves a running gateway on the old module.
-  const revision = createHash('sha256').update(readFileSync(new URL('./plugin/index.mjs', import.meta.url))).digest('hex');
-  config.plugins.entries['managed-remote-login'] = { enabled: true, hooks: { allowConversationAccess: true, allowPromptInjection: true }, config: { revision } };
+  config.plugins.entries['managed-remote-login'] = { enabled: true, hooks: { allowConversationAccess: true, allowPromptInjection: true } };
   config.plugins.load ??= {};
   config.plugins.load.paths ??= [];
-  const location = '/home/node/.openclaw/extensions/managed-remote-login';
+  const legacy = '/home/node/.openclaw/extensions/managed-remote-login';
+  const location = `/home/node/.openclaw/${relative}`;
+  config.plugins.load.paths = config.plugins.load.paths.filter(p => p !== legacy && !p.startsWith('/home/node/.openclaw/managed-plugins/managed-remote-login/'));
   if (!config.plugins.load.paths.includes(location)) config.plugins.load.paths.push(location);
   if (Array.isArray(config.plugins.allow) && !config.plugins.allow.includes('managed-remote-login')) config.plugins.allow.push('managed-remote-login');
   if (JSON.stringify(config) !== before) writeFileSync(configFile, JSON.stringify(config, null, 2) + '\n');
+  // Remove the previous auto-discovered copy to avoid duplicate plugin IDs.
+  rmSync(path.join(dir, 'config/extensions/managed-remote-login'), { recursive: true, force: true });
 }
 
 // Also used by a dedicated rollout that does not restart or reconfigure Claws.

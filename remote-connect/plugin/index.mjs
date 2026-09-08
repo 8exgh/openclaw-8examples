@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
 const exec = promisify(execFile);
 
 // Operator-owned runtime context, deliberately independent of writable memory
@@ -60,6 +61,7 @@ export default {
   id: 'managed-remote-login',
   name: '8Examples browser login handoff',
   register(api) {
+    api.logger?.info(`managed-remote-login active ${createHash('sha256').update(readFileSync(new URL('./index.mjs', import.meta.url))).digest('hex')}: public login handoff and reply delivery correction`);
     const workspaceFor = ctx => {
       const agentId = ctx.agentId || ctx.sessionKey?.match(/^agent:([^:]+):/)?.[1] || 'main';
       const agent = api.config?.agents?.list?.find(agent => agent.id === agentId);
