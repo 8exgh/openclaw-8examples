@@ -7,8 +7,10 @@ export interface Resources {
   pidsLimit: number;
 }
 
-/** Floor for a text-only tenant: gateway ~1 GB + headroom. */
-const BASE: Resources = { memoryGb: 4, cpus: 1.5, pidsLimit: 512 };
+/** Gateway plus the managed browser. Linux's PID limit counts threads too:
+ * several Chrome tabs and the gateway exhausted 512 and prevented Node from
+ * starting the remote-login bridge even with ample memory available. */
+const BASE: Resources = { memoryGb: 4, cpus: 1.5, pidsLimit: 1024 };
 
 /**
  * Enabled capabilities raise the floor; an explicit `tenant.resources`
