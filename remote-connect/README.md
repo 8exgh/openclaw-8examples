@@ -71,9 +71,15 @@ implementation. It does not automatically send a chat message on Done.
    through the public site. `verify_agent=true` also asks the actual canary agent
    to create the handoff from a normal login request (one model turn, no chat
    delivery; allows up to five minutes for the configured provider).
+   To reproduce an old conversation repeating a broken portal link, pass its
+   session key as `verify_session` with `verify_agent=true`. This adds a
+   broken-link test turn to that conversation's history without delivering a
+   chat message, uses only a new example.com tab, and closes the test handoff.
    Rerun the broker workflow with `all_tenants=true`
    to install instructions across the container fleet. Future
    tenant renders preserve the scoped credential and reinstall the helper.
+   Use `workspace_only=true` for instruction/helper corrections: it leaves
+   the broker and browser processes running, preserving active connections.
 
 Server7 must be able to reach the fleet's private Tailscale address (including
 from `nextjs-8examples`); the deployment verification fails if the route or tailnet
