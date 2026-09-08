@@ -24,6 +24,8 @@ const serviceToken = randomBytes(32).toString('hex');
 const ownerKey = 'e'.repeat(64);
 const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8', timeout: 90000, stdio: ['pipe', 'pipe', 'pipe'] });
 let web, browser, broker;
+let failNextFrame = false;
+const attachments = [];
 async function waitFor(check, label) {
   const deadline = Date.now() + 60000;
   let last;
@@ -77,7 +79,15 @@ try {
   const targetId = target.targetId || target.id;
   console.log('Real OpenClaw gateway opened its graphical browser.');
 
-  broker = createBroker({ serviceToken, publicOrigin: origin, tenantCredential: (id) => id === tenant ? ownerKey : undefined, createTransport: browserTransport });
+  broker = createBroker({ serviceToken, publicOrigin: origin, tenantCredential: (id) => id === tenant ? ownerKey : undefined, createTransport: id => {
+    const transport = browserTransport(id), request = transport.request.bind(transport);
+    transport.request = (action, data) => {
+      if (action === 'frame' && failNextFrame) { failNextFrame = false; return Promise.reject(Object.assign(new Error('Synthetic frame failure'), {retryable:true,code:'cdp_command_failed'})); }
+      return request(action, data);
+    };
+    attachments.push(transport);
+    return transport;
+  } });
   await new Promise((resolve) => broker.listen(18881, '127.0.0.1', resolve));
   web = spawn('npm', ['run', 'start', '--', '--hostname', '127.0.0.1', '--port', '3104'], {
     cwd: siteDir, detached: true, stdio: ['ignore', 'ignore', 'pipe'],
@@ -116,10 +126,17 @@ try {
   const replay = await stranger.request.post(`${origin}/api/remote-connect/${session.id}/unlock`, { headers: { origin }, data: { code: session.code } });
   assert.equal(replay.status(), 410);
   await stranger.close();
+  failNextFrame = true;
+  await page.getByRole('status').filter({hasText:'Reconnecting'}).waitFor();
+  await waitFor(async () => await page.getByRole('status').filter({hasText:'Reconnecting'}).count() === 0, 'automatic frame recovery');
+  attachments.at(-1).close();
+  await waitFor(async () => attachments.length >= 2 && await page.locator('img').count() === 1, 'bridge process reattachment with the same viewer cookie');
+  assert.equal((await context.cookies()).find(item => item.name.startsWith('__Secure-remote_'))?.value, cookie.value);
 
   // The fixture layout gives stable browser coordinates, transformed through
   // the displayed frame exactly as a human's clicks are.
   async function click(x, y) {
+    await waitFor(async () => await page.getByRole('status').filter({hasText:'Reconnecting'}).count() === 0, 'browser ready for input');
     const box = await page.getByAltText('Live remote browser.', { exact: false }).boundingBox();
     const metrics = await page.evaluate(() => { const img = document.querySelector('img'); return { w: img.naturalWidth, h: img.naturalHeight }; });
     await page.mouse.click(box.x + x * box.width / metrics.w, box.y + y * box.height / metrics.h);
@@ -135,7 +152,7 @@ try {
   await click(80, 120);
   await waitFor(async () => {
     const state = await page.evaluate(async (url) => (await fetch(url)).json(), `${origin}/api/remote-connect/${session.id}/state`);
-    return state.targetId === targetId;
+    return state.targetId === targetId && await page.locator('img').getAttribute('data-target-id') === targetId && await page.getByRole('status').filter({hasText:'Reconnecting'}).count() === 0;
   }, 'automatic return when the popup closes');
   await click(170, 170);
   await page.keyboard.type('remote-test@example.com');
@@ -160,7 +177,7 @@ try {
   const snapshot = docker('exec', container, 'openclaw', 'browser', '--browser-profile', 'openclaw', 'snapshot');
   assert.match(snapshot, /Signed in successfully/);
   assert.ok(!requests.some((url) => /google-analytics|googletagmanager|\/api\/replay|\/api\/log/.test(url)), 'No analytics or recording on the login page');
-  console.log('PASS: real pixels, wrong code, single-use code, cookie protection, CSRF, popup switching/auto-close, typing, Unicode password, submit, reload, Done, and OpenClaw sees the authenticated page after disconnect.');
+  console.log('PASS: real pixels, transient frame recovery, bridge restart with the same cookie, wrong/single-use codes, cookie protection, CSRF, popup switching/auto-close, typing, Unicode password, submit, reload, Done, and OpenClaw sees the authenticated page after disconnect.');
 } catch (error) {
   const page = browser?.contexts()[0]?.pages()[0];
   if (page) {

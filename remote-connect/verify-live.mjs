@@ -71,11 +71,30 @@ try {
   const pixels = await frame.json();
   assert.ok(pixels.width > 0 && pixels.height > 0);
   assert.equal(Buffer.from(pixels.image, 'base64').readUInt16BE(0), 0xffd8, 'Real JPEG pixels');
+  // The original smoke check fetched one still image. Keep reading through a
+  // real page navigation to exercise the browser lifecycle that login uses.
+  const navigation = cli('navigate', 'https://example.org', '--target-id', tab);
+  let healthyFrames = 0;
+  for (let attempt=0; attempt<12; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    const response = await fetch(base + '/frame', { headers, signal: AbortSignal.timeout(35000) });
+    if (response.status === 503) {
+      assert.equal((await response.json()).retryable, true, 'Temporary browser failures keep this viewer connected');
+      continue;
+    }
+    assert.equal(response.status, 200, 'Viewer survives real page navigation');
+    assert.equal((await response.json()).targetId, tab, 'Same browser tab remains attached');
+    healthyFrames++;
+  }
+  await navigation;
+  assert.ok(healthyFrames > 0, 'Browser recovered with the original viewer cookie');
+  const activeStatus = await helper('status');
+  assert.equal(activeStatus.status, 'connected');
   const done = await fetch(base + '/complete', { method: 'POST', headers, body: '{}' });
   assert.equal(done.status, 200);
   assert.equal((await helper('status')).status, 'completed', 'Claw sees returned control');
   assert.equal((await fetch(base + '/frame', { headers })).status, 410, 'Closed connection rejects previous viewer cookie');
-  console.log(`PASS ${tenant}: in-container helper → public HTTPS page/code → private broker → actual browser pixels → Done → Claw status. No login credentials used.`);
+  console.log(`PASS ${tenant}: helper → public HTTPS page/code → actual browser pixels across navigation → same viewer cookie → Done → Claw status. No login credentials used.`);
 } finally {
   if (created) await helper('revoke').catch(() => {});
   if (tab) await cli('close', tab).catch(() => {});

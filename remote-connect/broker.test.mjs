@@ -120,3 +120,55 @@ test('simultaneous unlock attempts redeem the code exactly once', async (t) => {
   const results = await Promise.all(Array.from({ length: 4 }, () => f.request(`/${s.id}/unlock`, { code: s.code })));
   assert.equal(results.filter((r) => r.status === 200).length, 1);
 });
+
+test('temporary frame failure preserves the authenticated viewer and publishes connected ownership', async t => {
+  const f = await fixture(t);
+  const s = (await f.create()).body;
+  const viewer = { 'x-remote-viewer': (await f.request(`/${s.id}/unlock`, { code: s.code })).body.viewerToken };
+  assert.equal(f.statuses.at(-1).status, 'connected');
+  const transport = f.transports[0], original = transport.request;
+  transport.request = async action => { if (action === 'frame') throw Object.assign(new Error('temporary screenshot error'), { retryable: true, code: 'cdp_command_failed' }); return original(action); };
+  const failed = await f.request(`/${s.id}/frame`, undefined, viewer);
+  assert.equal(failed.status, 503);
+  assert.equal(failed.body.retryable, true);
+  assert.equal(transport.closed, false);
+  assert.equal((await f.request(`/sessions/${s.id}`, undefined, f.owner)).body.status, 'connected');
+  transport.request = original;
+  f.tick(101);
+  assert.equal((await f.request(`/${s.id}/frame`, undefined, viewer)).status, 200);
+  assert.equal((await f.request(`/${s.id}/complete`, {}, viewer)).body.status, 'completed');
+});
+
+test('uncertain input is not replayed and a missing bridge can be reattached', async t => {
+  const f = await fixture(t);
+  const s = (await f.create()).body;
+  const viewer = { 'x-remote-viewer': (await f.request(`/${s.id}/unlock`, { code: s.code })).body.viewerToken };
+  let attempts = 0;
+  f.transports[0].request = async () => {
+    attempts++; f.transports[0].closed = true;
+    throw Object.assign(new Error('bridge lost'), { retryable: true, code: 'bridge_closed' });
+  };
+  assert.equal((await f.request(`/${s.id}/input`, { kind: 'text', text: 'synthetic input' }, viewer)).status, 503);
+  assert.equal(attempts, 1);
+  assert.equal((await f.request(`/${s.id}/frame`, undefined, viewer)).status, 200);
+  assert.equal(attempts, 1);
+  assert.equal(f.transports.length, 2);
+});
+
+test('persistent browser failure has a bounded recovery window despite healthy tab enumeration', async t => {
+  const diagnostics = [];
+  const f = await fixture(t, { ttlMs: 120000, idleMs: 120000, onFailure: event => diagnostics.push(event) });
+  const s = (await f.create()).body;
+  const viewer = { 'x-remote-viewer': (await f.request(`/${s.id}/unlock`, { code: s.code })).body.viewerToken };
+  const original = f.transports[0].request;
+  f.transports[0].request = async action => {
+    if (action === 'frame') throw Object.assign(new Error('private data must not be logged'), { retryable: true, code: 'cdp_timeout' });
+    return original(action);
+  };
+  assert.equal((await f.request(`/${s.id}/frame`, undefined, viewer)).status, 503);
+  f.tick(30001);
+  assert.equal((await f.request(`/${s.id}/state`, undefined, viewer)).status, 200);
+  assert.equal((await f.request(`/${s.id}/frame`, undefined, viewer)).status, 410);
+  assert.equal(f.transports[0].closed, true);
+  assert.deepEqual(diagnostics[0], { tenant: 'alice', action: 'frame', code: 'cdp_timeout' });
+});

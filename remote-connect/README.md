@@ -39,7 +39,7 @@ before verifying login and continuing. It can also `session.mjs revoke`.
   credential for each tenant and live assignment/offboarding state, resolves the
   fixed `openclaw-<tenant>` container, and proves the tab is reachable before
   issuing a link. No client can specify a container, CDP host, or CDP command.
-- `transport.mjs` / `browser-bridge.mjs`: trusted code passed into that container
+- `transport.mjs` / `browser-bridge.mjs` / `browser-client.mjs`: trusted code passed into that container
   through `docker exec` stdio. It attaches to the existing browser's local CDP
   endpoint. Only page pixels, tab selection, and a restricted input vocabulary
   cross this channel. Chrome's debugging port is never published.
@@ -59,6 +59,11 @@ a replacement closes the previous attachment. Input and frames are never written
 to logs, databases, or disk by this feature. The page excludes site analytics,
 session recording, and request logging; responses use no-store and no-referrer.
 Only credential-free connection status is written into the Claw's workspace.
+Temporary CDP/image/network failures retain the viewer cookie and allow a
+30-second recovery window. A lost bridge is recreated against the existing
+browser; a closed login popup returns to its surviving opener. Failed input is
+never replayed, and the viewer drops queued typing until a fresh frame arrives.
+Only fixed error categories and tenant/action names enter operational logs.
 
 This supports browser content, including web login popups. Native desktop
 dialogs, file pickers, browser chrome, and owner-device passkeys are outside this

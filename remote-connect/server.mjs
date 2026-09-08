@@ -17,6 +17,7 @@ const server = createBroker({
     } catch { return undefined; }
   },
   createTransport: browserTransport,
+  onFailure(event) { console.warn(JSON.stringify({ event: 'remote_browser_interrupted', ...event })); },
   onStatus(tenant, status) {
     const file = path.join(root, 'tenants', tenant, 'workspace/remote-connect/status.json');
     writeFileSync(file + '.tmp', JSON.stringify(status) + '\n', { mode: 0o644 });
