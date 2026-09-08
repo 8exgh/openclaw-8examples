@@ -13,17 +13,20 @@ import { randomBytes } from 'node:crypto';
 import { createBroker } from './broker.mjs';
 import { browserTransport } from './transport.mjs';
 import { installRemoteWorkspace } from './workspace.mjs';
+import { testHttps } from './test-https.mjs';
 
 const siteDir = path.resolve(process.env.REMOTE_CONNECT_SITE_DIR || '../8examples');
-const { chromium } = createRequire(path.join(siteDir, 'package.json'))('@playwright/test');
+const { chromium, webkit, devices } = createRequire(path.join(siteDir, 'package.json'))('@playwright/test');
+const tablet = process.env.REMOTE_CONNECT_VIEWER === 'ipad';
 const scratch = mkdtempSync(path.join(tmpdir(), 'remote-login-e2e-'));
 const tenant = `remote-test-${randomBytes(4).toString('hex')}`;
 const container = `openclaw-${tenant}`;
 const origin = 'http://127.0.0.1:3104';
+const viewerOrigin = 'https://127.0.0.1:3105';
 const serviceToken = randomBytes(32).toString('hex');
 const ownerKey = 'e'.repeat(64);
 const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8', timeout: 90000, stdio: ['pipe', 'pipe', 'pipe'] });
-let web, browser, broker;
+let web, browser, broker, tls;
 let failNextFrame = false;
 const attachments = [];
 async function waitFor(check, label) {
@@ -97,6 +100,7 @@ try {
   let webErrors = '';
   web.stderr.on('data', (chunk) => { webErrors = (webErrors + chunk).slice(-2000); });
   await waitFor(async () => (await fetch(origin + '/remote-connect/00000000-0000-4000-8000-000000000000')).ok, 'website');
+  tls = await testHttps(scratch, origin, viewerOrigin);
   // Run the very helper installed in each Claw; local Docker bridge cannot
   // reach host loopback, so invoke the identical helper from its local mount.
   const helper = spawn('node', [path.join(scratch, 'workspace/remote-connect/session.mjs'), 'create', targetId], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -106,12 +110,12 @@ try {
   await new Promise((resolve, reject) => helper.on('exit', (code) => code ? reject(new Error(helperErrors)) : resolve()));
   const session = JSON.parse(output);
   assert.match(session.code, /^\d{6}$/);
-  browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  browser = await (tablet ? webkit : chromium).launch({ headless: true });
+  const context = await browser.newContext({ ...(tablet ? devices['iPad Pro 11 landscape'] : { viewport: { width: 1400, height: 1000 } }), ignoreHTTPSErrors: true });
   const page = await context.newPage();
   const requests = [];
   page.on('request', (req) => requests.push(req.url()));
-  await page.goto(session.url);
+  await page.goto(session.url.replace(origin, viewerOrigin));
   await page.getByLabel('Connection code').fill(session.code === '000000' ? '000001' : '000000');
   await page.getByRole('button', { name: 'Connect to browser' }).click();
   await page.getByRole('alert').filter({ hasText: 'incorrect' }).waitFor();
@@ -120,10 +124,10 @@ try {
   await page.getByAltText('Live remote browser.', { exact: false }).waitFor();
   const cookie = (await context.cookies()).find((item) => item.name.startsWith('__Secure-remote_'));
   assert.ok(cookie?.httpOnly && cookie.secure && cookie.sameSite === 'Strict', 'Viewer cookie is HttpOnly, Secure, SameSite Strict');
-  assert.equal((await page.request.post(`${origin}/api/remote-connect/${session.id}/input`, { headers: { origin: 'https://untrusted.example' }, data: { kind: 'text', text: 'blocked' } })).status(), 403);
-  const stranger = await browser.newContext();
-  assert.equal((await stranger.request.get(`${origin}/api/remote-connect/${session.id}/frame`)).status(), 401);
-  const replay = await stranger.request.post(`${origin}/api/remote-connect/${session.id}/unlock`, { headers: { origin }, data: { code: session.code } });
+  assert.equal((await page.request.post(`${viewerOrigin}/api/remote-connect/${session.id}/input`, { headers: { origin: 'https://untrusted.example' }, data: { kind: 'text', text: 'blocked' } })).status(), 403);
+  const stranger = await browser.newContext({ ignoreHTTPSErrors: true });
+  assert.equal((await stranger.request.get(`${viewerOrigin}/api/remote-connect/${session.id}/frame`)).status(), 401);
+  const replay = await stranger.request.post(`${viewerOrigin}/api/remote-connect/${session.id}/unlock`, { headers: { origin: viewerOrigin }, data: { code: session.code } });
   assert.equal(replay.status(), 410);
   await stranger.close();
   failNextFrame = true;
@@ -137,9 +141,17 @@ try {
   // the displayed frame exactly as a human's clicks are.
   async function click(x, y) {
     await waitFor(async () => await page.getByRole('status').filter({hasText:'Reconnecting'}).count() === 0, 'browser ready for input');
+    await page.waitForFunction(() => {
+      const img = document.querySelector('img'), select = document.querySelector('select');
+      return img?.complete && img.naturalWidth > 0 && img.dataset.targetId === select?.value;
+    });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const box = await page.getByAltText('Live remote browser.', { exact: false }).boundingBox();
     const metrics = await page.evaluate(() => { const img = document.querySelector('img'); return { w: img.naturalWidth, h: img.naturalHeight }; });
-    await page.mouse.click(box.x + x * box.width / metrics.w, box.y + y * box.height / metrics.h);
+    const point = [box.x + x * box.width / metrics.w, box.y + y * box.height / metrics.h];
+    const response = page.waitForResponse(r => r.url().endsWith('/input') && r.request().postDataJSON()?.kind === 'click');
+    if (tablet) await page.touchscreen.tap(...point); else await page.mouse.click(...point);
+    assert.equal((await response).status(), 200, 'A physical pointer gesture reaches the broker');
   }
   // Both native scrollbars are present. A six-pixel target misses if click
   // coordinates use VisualViewport dimensions that exclude the gutters.
@@ -147,15 +159,16 @@ try {
   await waitFor(async () => await page.getByRole('option', { name: /Precision click confirmed/ }).count() === 1, 'precise click with both browser scrollbars');
   await click(550, 110);
   await waitFor(async () => (await page.getByLabel('Browser tab').locator('option').count()) >= 2, 'verification popup listed');
-  const popup = await page.evaluate(async (url) => (await (await fetch(url)).json()).tabs.find((tab) => tab.url.endsWith('/popup')), `${origin}/api/remote-connect/${session.id}/state`);
+  const popup = await page.evaluate(async (url) => (await (await fetch(url)).json()).tabs.find((tab) => tab.url.endsWith('/popup')), `${viewerOrigin}/api/remote-connect/${session.id}/state`);
   await page.getByLabel('Browser tab').selectOption(popup.id);
   await waitFor(async () => {
-    const state = await page.evaluate(async (url) => (await fetch(url)).json(), `${origin}/api/remote-connect/${session.id}/state`);
-    return state.targetId === popup.id && await page.locator('img').count() === 1;
+    const state = await page.evaluate(async (url) => (await fetch(url)).json(), `${viewerOrigin}/api/remote-connect/${session.id}/state`);
+    return state.targetId === popup.id && await page.locator('img').getAttribute('data-target-id') === popup.id;
   }, 'popup selected');
+  console.log('Pointer precision and popup selection passed.');
   await click(80, 120);
   await waitFor(async () => {
-    const state = await page.evaluate(async (url) => (await fetch(url)).json(), `${origin}/api/remote-connect/${session.id}/state`);
+    const state = await page.evaluate(async (url) => (await fetch(url)).json(), `${viewerOrigin}/api/remote-connect/${session.id}/state`);
     return state.targetId === targetId && await page.locator('img').getAttribute('data-target-id') === targetId && await page.getByRole('status').filter({hasText:'Reconnecting'}).count() === 0;
   }, 'automatic return when the popup closes');
   await click(170, 170);
@@ -165,7 +178,7 @@ try {
   await page.keyboard.insertText('synthetic-Påss!23');
   await page.keyboard.press('Enter');
   await waitFor(async () => {
-    const state = await page.evaluate(async (url) => (await fetch(url)).json(), `${origin}/api/remote-connect/${session.id}/state`);
+    const state = await page.evaluate(async (url) => (await fetch(url)).json(), `${viewerOrigin}/api/remote-connect/${session.id}/state`);
     return state.tabs.some((tab) => tab.url.endsWith('/account'));
   }, 'typing and submitting the remote login form');
   await page.reload();
@@ -175,7 +188,7 @@ try {
   await page.screenshot({ path: path.join(process.cwd(), 'artifacts/remote-connect/signed-in.png') });
   await page.getByRole('button', { name: 'Done — return control' }).click();
   await page.getByRole('heading', { name: 'Control returned' }).waitFor();
-  assert.equal((await page.request.get(`${origin}/api/remote-connect/${session.id}/frame`)).status(), 401);
+  assert.equal((await page.request.get(`${viewerOrigin}/api/remote-connect/${session.id}/frame`)).status(), 401);
   const status = await fetch(`${origin}/api/remote-connect/sessions/${session.id}`, { headers: { Authorization: `Bearer ${ownerKey}`, 'x-remote-tenant': tenant } });
   assert.equal((await status.json()).status, 'completed');
   const snapshot = docker('exec', container, 'openclaw', 'browser', '--browser-profile', 'openclaw', 'snapshot');
@@ -192,6 +205,7 @@ try {
   throw error;
 } finally {
   await browser?.close();
+  if (tls) await new Promise(resolve => tls.close(resolve));
   if (web?.pid) { try { process.kill(-web.pid, 'SIGTERM'); } catch {} }
   if (broker) await new Promise((resolve) => broker.close(resolve));
   if (!process.env.REMOTE_CONNECT_KEEP_TEST) {

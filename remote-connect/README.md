@@ -127,6 +127,7 @@ npm test
 npm run typecheck
 E2E_TEST_BUILD=1 npm --prefix ../8examples run build
 node remote-connect/e2e.mjs
+REMOTE_CONNECT_VIEWER=ipad node remote-connect/e2e.mjs
 ```
 
 `remote-connect/verify-hooks.mjs <plugin-directory>` runs inside an OpenClaw
@@ -154,9 +155,12 @@ It cleans up its container and temporary credentials; its non-sensitive
 screenshot is under ignored `artifacts/remote-connect/`.
 
 Defaults: browser image `ghcr.io/openclaw/openclaw:2026.8.1-browser`, site checkout
-`../8examples`, local ports 18881 and 3104. Override `REMOTE_CONNECT_TEST_IMAGE`
-and `REMOTE_CONNECT_SITE_DIR` as needed. Install the site's Playwright Chromium
-before running. No model call or external account is needed for this test.
+`../8examples`, local ports 18881, 3104, and 3105 (test HTTPS). Override
+`REMOTE_CONNECT_TEST_IMAGE` and `REMOTE_CONNECT_SITE_DIR` as needed. Install the
+site's Playwright Chromium and WebKit before running. The iPad mode uses WebKit,
+touch input, and physical keyboard events against the same real remote Chrome.
+OpenSSL creates a temporary test certificate so Secure cookies work in WebKit.
+No model call or external account is needed for this test.
 
 Protocol references: [OpenClaw managed browser](https://docs.openclaw.ai/tools/browser),
 [CDP Page](https://chromedevtools.github.io/devtools-protocol/tot/Page/),

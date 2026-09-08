@@ -19,10 +19,12 @@ const browser = async (action, target = '') => {
       document.body.style.cssText = 'margin:0;width:1600px;height:1600px;max-width:none';
       document.body.innerHTML = '<button id="remote-pointer-test" style="position:absolute;left:700px;top:350px;width:6px;height:6px;padding:0;border:0;background:blue"></button>';
       const target = document.getElementById('remote-pointer-test');
-      target.onclick = () => { target.dataset.clicked = 'yes'; };
+      const field = document.createElement('input'); field.id = 'remote-keyboard-test'; document.body.append(field);
+      target.onclick = () => { target.dataset.clicked = 'yes'; field.focus(); };
       const box = target.getBoundingClientRect();
       return { width: innerWidth / visualViewport.scale, height: innerHeight / visualViewport.scale, x: box.x + box.width / 2, y: box.y + box.height / 2 };
     })()` } }
+    : action === 'keyboard-status' ? { method: 'Runtime.evaluate', params: { returnByValue: true, expression: "document.getElementById('remote-keyboard-test')?.value === 'synthetic-ipad-å'" } }
     : action === 'pointer-status' ? { method: 'Runtime.evaluate', params: { returnByValue: true, expression: "document.getElementById('remote-pointer-test')?.dataset.clicked === 'yes'" } }
     : undefined;
   const source = `
@@ -44,7 +46,7 @@ const browser = async (action, target = '') => {
       const response=await fetch(new URL('/json/close/'+target,cdp));
       if(!response.ok) throw new Error('Could not close test tab');
       result={ok:true};
-    } else if(['navigate','prepare-pointer','pointer-status'].includes(action)) {
+    } else if(['navigate','prepare-pointer','pointer-status','keyboard-status'].includes(action)) {
       const command=${JSON.stringify(command)};
       const tabs=await(await fetch(new URL('/json/list',cdp))).json();
       const page=tabs.find(t=>t.id===target);
@@ -135,7 +137,12 @@ try {
   const clicked = await fetch(base + '/input', { method: 'POST', headers, body: JSON.stringify({ kind: 'click', x: target.x / target.width * pixels.width, y: target.y / target.height * pixels.height, clickCount: 1 }), signal: AbortSignal.timeout(20000) });
   assert.equal(clicked.status, 200, 'Public pointer input is acknowledged');
   assert.equal(await browser('pointer-status', tab), true, 'Public click hits the six-pixel target with both scrollbars present');
-  console.log('PASS: full viewport coordinates and a six-pixel click target through public HTTPS.');
+  for (const input of [{kind:'text',text:'synthetic-ipad-x'}, {kind:'key',key:'Backspace',code:'Backspace',keyCode:8,modifiers:0}, {kind:'text',text:'å'}]) {
+    const typed = await fetch(base + '/input', { method:'POST', headers, body:JSON.stringify(input), signal:AbortSignal.timeout(20000) });
+    assert.equal(typed.status, 200, 'Public keyboard input is acknowledged');
+  }
+  assert.equal(await browser('keyboard-status', tab), true, 'Click focus, keyboard editing, and Unicode text reach the same remote field');
+  console.log('PASS: full viewport coordinates, six-pixel click target, field focus, typing, Backspace, and Unicode through public HTTPS.');
   // The original smoke check fetched one still image. Keep reading through a
   // real page navigation to exercise the browser lifecycle that login uses.
   const navigation = browser('navigate', tab).then(() => undefined, error => error);
