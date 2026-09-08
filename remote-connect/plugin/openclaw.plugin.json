@@ -2,7 +2,7 @@
   "id": "managed-remote-login",
   "name": "8Examples browser login handoff",
   "description": "Keeps the installed public browser handoff available in existing conversations.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "activation": { "onStartup": true },
-  "configSchema": { "type": "object", "additionalProperties": false, "properties": {} }
+  "configSchema": { "type": "object", "additionalProperties": false, "properties": { "revision": { "type": "string" } } }
 }

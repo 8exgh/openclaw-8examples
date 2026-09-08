@@ -26,6 +26,11 @@ before verifying login and continuing. It can also `session.mjs revoke`.
   substitute a local VNC link. Shared rooms first move to private chat;
   other requests use the normal agent. A browser that is not running is left
   to the agent to start and open to the intended site.
+  An outbound reply check also catches follow-ups such as “I'm confused” when
+  the model repeats obsolete private-server/Control UI advice. In a private
+  chat it replaces that advice with a real helper-created connection. An
+  already connected viewer keeps control. Named LinkedIn requests select the
+  existing LinkedIn tab instead of an unrelated foreground tab.
   `AGENTS.md` tells the Claw to offer this for login, password, MFA, or CAPTCHA,
   share both link and code, then stop inspecting/controlling the browser until
   control is returned. Pausing other automation is an agent instruction, not a
@@ -89,6 +94,8 @@ implementation. It does not automatically send a chat message on Done.
    Set `runtime_hooks=true` to install the native handoff plugin too. This
    changes the Claw's plugin configuration; OpenClaw reloads its gateway when
    idle. Start with the canary, then roll out with `all_tenants=true`.
+   Plugin code updates carry a content revision in configuration so an
+   already-running gateway reloads the new hooks.
 
 Server7 must be able to reach the fleet's private Tailscale address (including
 from `nextjs-8examples`); the deployment verification fails if the route or tailnet
@@ -116,6 +123,14 @@ container and boots an isolated gateway with a local mock model and helper. It
 verifies that private takeover requests invoke the helper without a model call,
 that ordinary prompts receive the runtime context, and that leading zeroes in
 codes survive. It inherits no live channel tokens or provider credentials.
+
+`remote-connect/verify-telegram.mjs <plugin-directory>` exercises actual Telegram
+polling and outbound delivery through a loopback fake Bot API. It deliberately
+makes the mock model repeat the observed private-server refusal on an iPad
+follow-up, and asserts that Telegram receives a helper-created link and code.
+The deployment workflow's `verify_telegram=true` runs this against the canary's
+installed hook files with isolated state, synthetic credentials, and no calls
+to the real Telegram service.
 
 The last test boots an isolated **real OpenClaw graphical browser**, broker, and
 production Next.js site, then drives the viewer through Playwright. It enters

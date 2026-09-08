@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, chownSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -22,7 +22,10 @@ export function installRemoteRuntime(dir) {
   const before = JSON.stringify(config);
   config.plugins ??= {};
   config.plugins.entries ??= {};
-  config.plugins.entries['managed-remote-login'] = { enabled: true, hooks: { allowConversationAccess: true, allowPromptInjection: true } };
+  // Changing hook code must invalidate OpenClaw's loaded plugin generation;
+  // copying new files alone leaves a running gateway on the old module.
+  const revision = createHash('sha256').update(readFileSync(new URL('./plugin/index.mjs', import.meta.url))).digest('hex');
+  config.plugins.entries['managed-remote-login'] = { enabled: true, hooks: { allowConversationAccess: true, allowPromptInjection: true }, config: { revision } };
   config.plugins.load ??= {};
   config.plugins.load.paths ??= [];
   const location = '/home/node/.openclaw/extensions/managed-remote-login';
