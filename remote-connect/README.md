@@ -55,8 +55,8 @@ implementation. It does not automatically send a chat message on Done.
 
 1. Set a random 32-byte-or-longer `REMOTE_CONNECT_SERVICE_TOKEN` GitHub secret
    in the **remote-connect environment of 8exgh/devops** (its repository secret
-   slots are full). Both broker and website deployment jobs use that environment. No shared
-   fleet administration or telemetry token is given to a tenant.
+   slots are full). Both broker and website deployment jobs use that environment.
+   No shared fleet administration or telemetry token is given to a tenant.
 2. Run devops `deploy-openclaw-remote-connect.yml` against the reviewed source
    ref, initially with tenant `openclaw1`. It installs a systemd broker at
    `100.97.6.94:18880` and updates only the selected workspace. It does not
@@ -65,7 +65,11 @@ implementation. It does not automatically send a chat message on Done.
 3. Deploy the website with the updated devops website workflow. Its environment:
    `REMOTE_CONNECT_BROKER_URL=http://100.97.6.94:18880`, the service token above,
    and `REMOTE_CONNECT_PUBLIC_ORIGIN=https://8examples.com`.
-4. Verify a real session on the canary. Rerun the broker workflow with an empty
+4. Run the broker workflow with `verify_public=true` to verify a real session
+   through the public site. `verify_agent=true` also asks the actual canary agent
+   to create the handoff from a normal login request (one model turn, no chat
+   delivery; allows up to five minutes for the configured provider).
+   Rerun the broker workflow with an empty
    tenant input to install instructions across the container fleet. Future
    tenant renders preserve the scoped credential and reinstall the helper.
 
@@ -94,7 +98,8 @@ The last test boots an isolated **real OpenClaw graphical browser**, broker, and
 production Next.js site, then drives the viewer through Playwright. It enters
 synthetic credentials, submits a login, returns control, and asks OpenClaw for a
 snapshot proving it sees the authenticated page. It also verifies wrong/reused
-codes, authentication, CSRF, cookie flags, reconnect, and exclusion of analytics.
+codes, authentication, CSRF, cookie flags, reconnect, popup switching and automatic
+return after popup closure, and exclusion of analytics.
 It cleans up its container and temporary credentials; its non-sensitive
 screenshot is under ignored `artifacts/remote-connect/`.
 
