@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
 const exec = promisify(execFile);
 const tenant = process.argv[2] || 'openclaw1';
 if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(tenant)) throw new Error('Invalid canary tenant');
@@ -17,7 +18,22 @@ try {
   const opened = JSON.parse(await cli('open', 'https://example.com', '--json'));
   tab = opened.targetId || opened.id;
   assert.ok(tab, 'OpenClaw returned the test tab');
-  const session = await helper('create', tab);
+  let session;
+  if (process.env.REMOTE_CONNECT_VERIFY_AGENT === '1') {
+    // No --deliver: this exercises contextual agent behavior without posting
+    // any message to a customer's chat channel or entering real credentials.
+    const message = `I need to sign in, but I want to enter my username and password myself directly in your browser instead of sending them in chat. Please set up a remote browser connection and give me the link and code. For this setup check use the existing managed openclaw browser tab ${tab} on https://example.com. Do not enter any credentials, navigate away, or send any messages to other people. End your turn once you have given me the handoff.`;
+    const { stdout } = await exec('docker', ['exec', container, 'openclaw', 'agent', '--agent', 'main', '--session-id', randomUUID(), '--message', message, '--timeout', '120', '--json'], { timeout: 150000, maxBuffer: 2 * 1024 * 1024 });
+    const result = JSON.parse(stdout);
+    const text = (result.result?.payloads || result.payloads || []).map((item) => item.text || '').join('\n');
+    const url = text.match(/https:\/\/8examples\.com\/remote-connect\/[0-9a-f-]{36}/)?.[0];
+    const code = text.match(/\b\d{6}\b/)?.[0];
+    assert.ok(url && code, 'The Claw must contextually create and return a remote URL and six-digit code');
+    const status = await helper('status');
+    assert.equal(status.id, new URL(url).pathname.split('/').pop(), 'The offered URL must be the session the Claw actually created');
+    session = { ...status, url, code };
+    console.log('PASS: the Claw contextually offered and actually created the remote login using its installed instructions.');
+  } else session = await helper('create', tab);
   created = true;
   const origin = new URL(session.url).origin;
   assert.equal(origin, 'https://8examples.com');
