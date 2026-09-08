@@ -13,6 +13,18 @@ const cli = async (...args) => (await exec('docker', ['exec', container, 'opencl
 // Use raw CDP identities for this disposable tab. CLI tab references/selection
 // are session-scoped, and must never let verification close an owner's tab.
 const browser = async (action, target = '') => {
+  const command = action === 'navigate' ? { method: 'Page.navigate', params: { url: 'https://example.org' } }
+    : action === 'prepare-pointer' ? { method: 'Runtime.evaluate', params: { returnByValue: true, expression: `(() => {
+      document.documentElement.style.overflow = 'scroll';
+      document.body.style.cssText = 'margin:0;width:1600px;height:1600px;max-width:none';
+      document.body.innerHTML = '<button id="remote-pointer-test" style="position:absolute;left:700px;top:350px;width:6px;height:6px;padding:0;border:0;background:blue"></button>';
+      const target = document.getElementById('remote-pointer-test');
+      target.onclick = () => { target.dataset.clicked = 'yes'; };
+      const box = target.getBoundingClientRect();
+      return { width: innerWidth / visualViewport.scale, height: innerHeight / visualViewport.scale, x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    })()` } }
+    : action === 'pointer-status' ? { method: 'Runtime.evaluate', params: { returnByValue: true, expression: "document.getElementById('remote-pointer-test')?.dataset.clicked === 'yes'" } }
+    : undefined;
   const source = `
     import {readFileSync} from 'node:fs';
     const profile=JSON.parse(readFileSync('/home/node/.openclaw/openclaw.json','utf8')).browser?.profiles?.openclaw;
@@ -32,7 +44,8 @@ const browser = async (action, target = '') => {
       const response=await fetch(new URL('/json/close/'+target,cdp));
       if(!response.ok) throw new Error('Could not close test tab');
       result={ok:true};
-    } else if(action==='navigate') {
+    } else if(['navigate','prepare-pointer','pointer-status'].includes(action)) {
+      const command=${JSON.stringify(command)};
       const tabs=await(await fetch(new URL('/json/list',cdp))).json();
       const page=tabs.find(t=>t.id===target);
       if(!page) throw new Error('Missing test tab');
@@ -41,9 +54,9 @@ const browser = async (action, target = '') => {
       const socket=new WebSocket(url);
       await new Promise((resolve,reject)=>{socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',reject,{once:true});});
       result=await new Promise((resolve,reject)=>{
-        const timer=setTimeout(()=>reject(new Error('Navigation timed out')),10000);
-        socket.addEventListener('message',({data})=>{const m=JSON.parse(data);if(m.id===1){clearTimeout(timer);m.error?reject(new Error('Navigation failed')):resolve({ok:true});}});
-        socket.send(JSON.stringify({id:1,method:'Page.navigate',params:{url:'https://example.org'}}));
+        const timer=setTimeout(()=>reject(new Error('Browser check timed out')),10000);
+        socket.addEventListener('message',({data})=>{const m=JSON.parse(data);if(m.id===1){clearTimeout(timer);m.error?reject(new Error('Browser check failed')):resolve(command.method==='Runtime.evaluate'?m.result.result.value:{ok:true});}});
+        socket.send(JSON.stringify({id:1,...command}));
       });
       socket.close();
     } else throw new Error('Unsupported check');
@@ -110,11 +123,19 @@ try {
   assert.match(setCookie, /SameSite=strict/i);
   assert.equal((await unlocked.json()).viewerToken, undefined, 'Viewer secret stays out of JavaScript');
   const headers = { Origin: origin, Cookie: setCookie.split(';')[0], 'Content-Type': 'application/json' };
+  // Modify only the disposable verification tab, never an owner's existing
+  // page. A small target and both gutters expose the old coordinate drift.
+  const target = await browser('prepare-pointer', tab);
   const frame = await fetch(base + '/frame', { headers, signal: AbortSignal.timeout(20000) });
   assert.equal(frame.status, 200, 'Live graphical browser frame over public HTTPS');
   const pixels = await frame.json();
   assert.ok(pixels.width > 0 && pixels.height > 0);
   assert.equal(Buffer.from(pixels.image, 'base64').readUInt16BE(0), 0xffd8, 'Real JPEG pixels');
+  assert.ok(Math.abs(pixels.width - target.width) < 1 && Math.abs(pixels.height - target.height) < 1, 'Frame dimensions include the complete viewport and scrollbars');
+  const clicked = await fetch(base + '/input', { method: 'POST', headers, body: JSON.stringify({ kind: 'click', x: target.x / target.width * pixels.width, y: target.y / target.height * pixels.height, clickCount: 1 }), signal: AbortSignal.timeout(20000) });
+  assert.equal(clicked.status, 200, 'Public pointer input is acknowledged');
+  assert.equal(await browser('pointer-status', tab), true, 'Public click hits the six-pixel target with both scrollbars present');
+  console.log('PASS: full viewport coordinates and a six-pixel click target through public HTTPS.');
   // The original smoke check fetched one still image. Keep reading through a
   // real page navigation to exercise the browser lifecycle that login uses.
   const navigation = browser('navigate', tab).then(() => undefined, error => error);

@@ -192,8 +192,10 @@ export function createBroker({ serviceToken, tenantCredential, createTransport, 
         if (now() - s.failureSince < recoveryMs) throw new Rejected(503, action === 'input'
           ? 'The browser was interrupted. Check the page before continuing; your last input was not resent.'
           : 'Reconnecting to your browser… Keep this page open.', true);
-        end(s, 'disconnected');
-        throw new Rejected(410, 'The browser did not reconnect. Ask your Claw for a new connection.');
+        // A slow renderer must not revoke an otherwise valid viewer. The UI
+        // pauses automatic recovery and lets the owner retry or return control.
+        // Normal session expiry, idle timeout, and revocation still apply.
+        throw new Rejected(503, 'The browser is taking longer to respond. Retry the connection or return control.', true);
       }
       if (!(error instanceof Rejected)) end(s, 'disconnected');
       throw error;

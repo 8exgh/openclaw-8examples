@@ -81,13 +81,19 @@ export function createBrowserClient(cdp, { fetchImpl = fetch, WebSocketImpl = We
       if (action === 'tabs') return { targetId, tabs: (await tabs()).map(({ id, title, url }) => ({ id, title, url })) };
       if (action === 'frame') {
         await command('Page.bringToFront');
-        const [shot, metrics] = await Promise.all([
+        const [shot, metrics, windowSize] = await Promise.all([
           command('Page.captureScreenshot', { format: 'jpeg', quality: 70, captureBeyondViewport: false }),
           command('Page.getLayoutMetrics'),
+          // Screenshots include the scrollbars. VisualViewport.clientWidth /
+          // clientHeight exclude them, shifting clicks toward the top left.
+          command('Runtime.evaluate', { expression: '({width:innerWidth,height:innerHeight})', returnByValue: true }),
         ]);
         const viewport = metrics.cssVisualViewport || metrics.visualViewport;
-        if (!shot?.data || !viewport?.clientWidth || !viewport?.clientHeight) throw failure('frame_not_ready');
-        return { image: shot.data, width: viewport.clientWidth, height: viewport.clientHeight, targetId };
+        const size = windowSize?.result?.value;
+        const scale = viewport?.scale || 1;
+        const width = size?.width / scale, height = size?.height / scale;
+        if (!shot?.data || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 || width > 16384 || height > 16384) throw failure('frame_not_ready');
+        return { image: shot.data, width, height, targetId };
       }
       if (action === 'input') {
         if (data.kind === 'text') await command('Input.insertText', { text: data.text });

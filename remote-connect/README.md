@@ -59,11 +59,16 @@ a replacement closes the previous attachment. Input and frames are never written
 to logs, databases, or disk by this feature. The page excludes site analytics,
 session recording, and request logging; responses use no-store and no-referrer.
 Only credential-free connection status is written into the Claw's workspace.
-Temporary CDP/image/network failures retain the viewer cookie and allow a
-30-second recovery window. A lost bridge is recreated against the existing
+Temporary CDP/image/network failures retain the viewer cookie. The website
+tries automatically for 30 seconds, then offers **Retry connection** or Done;
+a slow browser alone does not revoke the viewer. Normal session expiry, idle
+timeout, and owner revocation still apply. A lost bridge is recreated against the existing
 browser; a closed login popup returns to its surviving opener. Failed input is
 never replayed, and the viewer drops queued typing until a fresh frame arrives.
 Only fixed error categories and tenant/action names enter operational logs.
+Frame dimensions include scrollbar gutters using the browser's full inner
+viewport, adjusted for pinch zoom. Using the smaller visual-viewport client
+dimensions for a screenshot that includes scrollbars shifts pointer input.
 
 This supports browser content, including web login popups. Native desktop
 dialogs, file pickers, browser chrome, and owner-device passkeys are outside this
@@ -143,7 +148,8 @@ production Next.js site, then drives the viewer through Playwright. It enters
 synthetic credentials, submits a login, returns control, and asks OpenClaw for a
 snapshot proving it sees the authenticated page. It also verifies wrong/reused
 codes, authentication, CSRF, cookie flags, reconnect, popup switching and automatic
-return after popup closure, and exclusion of analytics.
+return after popup closure, a six-pixel click target with both scrollbars
+visible, and exclusion of analytics.
 It cleans up its container and temporary credentials; its non-sensitive
 screenshot is under ignored `artifacts/remote-connect/`.
 

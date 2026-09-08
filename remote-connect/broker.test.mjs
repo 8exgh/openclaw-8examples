@@ -155,7 +155,7 @@ test('uncertain input is not replayed and a missing bridge can be reattached', a
   assert.equal(f.transports.length, 2);
 });
 
-test('persistent browser failure has a bounded recovery window despite healthy tab enumeration', async t => {
+test('a long browser interruption preserves the viewer for manual retry and still expires normally', async t => {
   const diagnostics = [];
   const f = await fixture(t, { ttlMs: 120000, idleMs: 120000, onFailure: event => diagnostics.push(event) });
   const s = (await f.create()).body;
@@ -168,7 +168,17 @@ test('persistent browser failure has a bounded recovery window despite healthy t
   assert.equal((await f.request(`/${s.id}/frame`, undefined, viewer)).status, 503);
   f.tick(30001);
   assert.equal((await f.request(`/${s.id}/state`, undefined, viewer)).status, 200);
+  const stalled = await f.request(`/${s.id}/frame`, undefined, viewer);
+  assert.equal(stalled.status, 503);
+  assert.equal(stalled.body.retryable, true);
+  assert.match(stalled.body.error, /Retry/);
+  assert.equal(f.transports[0].closed, false);
+  assert.equal((await f.request(`/sessions/${s.id}`, undefined, f.owner)).body.status, 'connected');
+  assert.deepEqual(diagnostics[0], { tenant: 'alice', action: 'frame', code: 'cdp_timeout' });
+  f.transports[0].request = original;
+  f.tick(101);
+  assert.equal((await f.request(`/${s.id}/frame`, undefined, viewer)).status, 200);
+  f.tick(120000);
   assert.equal((await f.request(`/${s.id}/frame`, undefined, viewer)).status, 410);
   assert.equal(f.transports[0].closed, true);
-  assert.deepEqual(diagnostics[0], { tenant: 'alice', action: 'frame', code: 'cdp_timeout' });
 });

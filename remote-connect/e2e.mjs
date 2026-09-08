@@ -58,7 +58,7 @@ try {
       }
       if (req.url === '/account') { res.end(req.headers.cookie?.includes('signed_in=yes') ? '<h1>Signed in successfully</h1><p>Login persisted in the Claw browser.</p>' : 'Not signed in'); return; }
       if (req.url === '/popup') { res.end('<h1>Verification popup</h1><button style="position:absolute;left:40px;top:100px;height:60px;width:200px" onclick="window.close()">Return to login</button>'); return; }
-      res.end('<style>body{font:24px sans-serif;padding:30px}input,button{display:block;font:24px sans-serif;margin:20px 0;padding:12px;width:360px}</style><h1>Remote login test</h1><form action="/login" method="post"><input name="username" aria-label="Username" placeholder="Username"/><input name="password" aria-label="Password" type="password" placeholder="Password"/><button>Sign in</button></form><a style="position:absolute;left:500px;top:100px" href="/popup" target="_blank">Open verification popup</a><div style="height:1200px"></div><p>Scroll works</p>');
+      res.end('<style>body{font:24px sans-serif;padding:30px;width:1600px;overflow:scroll}input,button{display:block;font:24px sans-serif;margin:20px 0;padding:12px;width:360px}</style><h1>Remote login test</h1><form action="/login" method="post"><input name="username" aria-label="Username" placeholder="Username"/><input name="password" aria-label="Password" type="password" placeholder="Password"/><button>Sign in</button></form><a style="position:absolute;left:500px;top:100px" href="/popup" target="_blank">Open verification popup</a><button style="position:absolute;left:700px;top:450px;width:6px;height:6px;margin:0;padding:0;border:0;background:blue" aria-label="Precision target" onclick="document.title=&quot;Precision click confirmed&quot;"></button><div style="height:1200px"></div><p>Scroll works</p>');
     }).listen(18801, '127.0.0.1');
   `);
   docker('run', '-d', '--name', container, '--init', '--shm-size=1g', '--memory=3g',
@@ -141,6 +141,10 @@ try {
     const metrics = await page.evaluate(() => { const img = document.querySelector('img'); return { w: img.naturalWidth, h: img.naturalHeight }; });
     await page.mouse.click(box.x + x * box.width / metrics.w, box.y + y * box.height / metrics.h);
   }
+  // Both native scrollbars are present. A six-pixel target misses if click
+  // coordinates use VisualViewport dimensions that exclude the gutters.
+  await click(703, 453);
+  await waitFor(async () => await page.getByRole('option', { name: /Precision click confirmed/ }).count() === 1, 'precise click with both browser scrollbars');
   await click(550, 110);
   await waitFor(async () => (await page.getByLabel('Browser tab').locator('option').count()) >= 2, 'verification popup listed');
   const popup = await page.evaluate(async (url) => (await (await fetch(url)).json()).tabs.find((tab) => tab.url.endsWith('/popup')), `${origin}/api/remote-connect/${session.id}/state`);

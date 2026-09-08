@@ -19,7 +19,9 @@ function fixture() {
       commands.push({ ...message, target: this.target });
       const special = behavior(message, this);
       if (special === 'drop') return;
-      const result = message.method === 'Page.captureScreenshot' ? { data: 'jpeg' } : message.method === 'Page.getLayoutMetrics' ? { cssVisualViewport: { clientWidth: 800, clientHeight: 600 } } : {};
+      const result = message.method === 'Page.captureScreenshot' ? { data: 'jpeg' }
+        : message.method === 'Page.getLayoutMetrics' ? { cssVisualViewport: { clientWidth: 785, clientHeight: 585, scale: 1 } }
+        : message.method === 'Runtime.evaluate' ? { result: { value: { width: 800, height: 600 } } } : {};
       queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ id: message.id, ...(special || { result }) }) })));
     }
   }
@@ -38,6 +40,22 @@ test('a transient screenshot failure reattaches the surviving tab on the next fr
   f.behave(() => undefined);
   assert.equal((await f.client.handle('frame')).targetId, 'main');
   assert.equal(f.sockets.length, 2);
+});
+
+test('frame coordinates include both scrollbars and account for pinch zoom', async t => {
+  const f = fixture(); t.after(f.client.close);
+  await f.client.handle('select', { targetId: 'main' });
+  assert.deepEqual(await f.client.handle('frame'), { image: 'jpeg', width: 800, height: 600, targetId: 'main' });
+  f.behave(({ method }) => method === 'Page.getLayoutMetrics'
+    ? { result: { cssVisualViewport: { clientWidth: 392.5, clientHeight: 292.5, scale: 2 } } } : undefined);
+  assert.deepEqual(await f.client.handle('frame'), { image: 'jpeg', width: 400, height: 300, targetId: 'main' });
+});
+
+test('missing viewport dimensions cannot produce an input-ready frame', async t => {
+  const f = fixture(); t.after(f.client.close);
+  await f.client.handle('select', { targetId: 'main' });
+  f.behave(({ method }) => method === 'Runtime.evaluate' ? { result: { exceptionDetails: {} } } : undefined);
+  await assert.rejects(f.client.handle('frame'), { code: 'frame_not_ready' });
 });
 
 test('a timed-out screenshot recovers without waiting for a new login code', async t => {
