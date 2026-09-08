@@ -54,7 +54,8 @@ implementation. It does not automatically send a chat message on Done.
 ## Deployment
 
 1. Set a random 32-byte-or-longer `REMOTE_CONNECT_SERVICE_TOKEN` GitHub secret
-   in **8exgh/devops**. Both broker and website deployments use it. No shared
+   in the **remote-connect environment of 8exgh/devops** (its repository secret
+   slots are full). Both broker and website deployment jobs use that environment. No shared
    fleet administration or telemetry token is given to a tenant.
 2. Run devops `deploy-openclaw-remote-connect.yml` against the reviewed source
    ref, initially with tenant `openclaw1`. It installs a systemd broker at
