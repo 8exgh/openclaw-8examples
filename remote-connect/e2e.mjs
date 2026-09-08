@@ -55,8 +55,8 @@ try {
         res.writeHead(303, { 'set-cookie': 'signed_in=yes; HttpOnly; SameSite=Lax; Path=/', location: '/account' }); res.end(); return;
       }
       if (req.url === '/account') { res.end(req.headers.cookie?.includes('signed_in=yes') ? '<h1>Signed in successfully</h1><p>Login persisted in the Claw browser.</p>' : 'Not signed in'); return; }
-      if (req.url === '/popup') { res.end('<h1>Verification popup</h1>'); return; }
-      res.end('<style>body{font:24px sans-serif;padding:30px}input,button{display:block;font:24px sans-serif;margin:20px 0;padding:12px;width:360px}</style><h1>Remote login test</h1><form action="/login" method="post"><input name="username" aria-label="Username" placeholder="Username"/><input name="password" aria-label="Password" type="password" placeholder="Password"/><button>Sign in</button></form><a href="/popup" target="_blank">Open verification popup</a><div style="height:1200px"></div><p>Scroll works</p>');
+      if (req.url === '/popup') { res.end('<h1>Verification popup</h1><button style="position:absolute;left:40px;top:100px;height:60px;width:200px" onclick="window.close()">Return to login</button>'); return; }
+      res.end('<style>body{font:24px sans-serif;padding:30px}input,button{display:block;font:24px sans-serif;margin:20px 0;padding:12px;width:360px}</style><h1>Remote login test</h1><form action="/login" method="post"><input name="username" aria-label="Username" placeholder="Username"/><input name="password" aria-label="Password" type="password" placeholder="Password"/><button>Sign in</button></form><a style="position:absolute;left:500px;top:100px" href="/popup" target="_blank">Open verification popup</a><div style="height:1200px"></div><p>Scroll works</p>');
     }).listen(18801, '127.0.0.1');
   `);
   docker('run', '-d', '--name', container, '--init', '--shm-size=1g', '--memory=3g',
@@ -124,6 +124,19 @@ try {
     const metrics = await page.evaluate(() => { const img = document.querySelector('img'); return { w: img.naturalWidth, h: img.naturalHeight }; });
     await page.mouse.click(box.x + x * box.width / metrics.w, box.y + y * box.height / metrics.h);
   }
+  await click(550, 110);
+  await waitFor(async () => (await page.getByLabel('Browser tab').locator('option').count()) >= 2, 'verification popup listed');
+  const popup = await page.evaluate(async (url) => (await (await fetch(url)).json()).tabs.find((tab) => tab.url.endsWith('/popup')), `${origin}/api/remote-connect/${session.id}/state`);
+  await page.getByLabel('Browser tab').selectOption(popup.id);
+  await waitFor(async () => {
+    const state = await page.evaluate(async (url) => (await fetch(url)).json(), `${origin}/api/remote-connect/${session.id}/state`);
+    return state.targetId === popup.id && await page.locator('img').count() === 1;
+  }, 'popup selected');
+  await click(80, 120);
+  await waitFor(async () => {
+    const state = await page.evaluate(async (url) => (await fetch(url)).json(), `${origin}/api/remote-connect/${session.id}/state`);
+    return state.targetId === targetId;
+  }, 'automatic return when the popup closes');
   await click(170, 170);
   await page.keyboard.type('remote-test@example.com');
   await page.keyboard.press('Tab');
@@ -147,8 +160,13 @@ try {
   const snapshot = docker('exec', container, 'openclaw', 'browser', '--browser-profile', 'openclaw', 'snapshot');
   assert.match(snapshot, /Signed in successfully/);
   assert.ok(!requests.some((url) => /google-analytics|googletagmanager|\/api\/replay|\/api\/log/.test(url)), 'No analytics or recording on the login page');
-  console.log('PASS: real pixels, wrong code, single-use code, cookie protection, CSRF, typing, Unicode password, submit, reload, Done, and OpenClaw sees the authenticated page after disconnect.');
+  console.log('PASS: real pixels, wrong code, single-use code, cookie protection, CSRF, popup switching/auto-close, typing, Unicode password, submit, reload, Done, and OpenClaw sees the authenticated page after disconnect.');
 } catch (error) {
+  const page = browser?.contexts()[0]?.pages()[0];
+  if (page) {
+    mkdirSync(path.join(process.cwd(), 'artifacts/remote-connect'), { recursive: true });
+    await page.screenshot({ path: path.join(process.cwd(), 'artifacts/remote-connect/failure.png') }).catch(() => {});
+  }
   try { console.error(docker('logs', '--tail', '20', container)); } catch {}
   throw error;
 } finally {

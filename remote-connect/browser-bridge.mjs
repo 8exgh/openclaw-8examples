@@ -80,6 +80,9 @@ async function handle(action, data) {
   }
   if (action === 'tabs') return { targetId, tabs: (await tabs()).map(({ id, title, url }) => ({ id, title, url })) };
   if (action === 'frame') {
+    // A newly opened OAuth popup can background the selected page. Headful
+    // Chromium may then wait indefinitely for a frame from that page.
+    await command('Page.bringToFront');
     const [shot, metrics] = await Promise.all([
       command('Page.captureScreenshot', { format: 'jpeg', quality: 70, captureBeyondViewport: false }),
       command('Page.getLayoutMetrics'),
