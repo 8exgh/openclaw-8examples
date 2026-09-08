@@ -10,14 +10,58 @@ const tenant = process.argv[2] || 'openclaw1';
 if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(tenant)) throw new Error('Invalid canary tenant');
 const container = `openclaw-${tenant}`;
 const cli = async (...args) => (await exec('docker', ['exec', container, 'openclaw', 'browser', '--browser-profile', 'openclaw', ...args], { timeout: 60000, maxBuffer: 1024 * 1024 })).stdout;
+// Use raw CDP identities for this disposable tab. CLI tab references/selection
+// are session-scoped, and must never let verification close an owner's tab.
+const browser = async (action, target = '') => {
+  const source = `
+    import {readFileSync} from 'node:fs';
+    const profile=JSON.parse(readFileSync('/home/node/.openclaw/openclaw.json','utf8')).browser?.profiles?.openclaw;
+    const cdp=new URL(profile?.cdpUrl||'http://127.0.0.1:'+(profile?.cdpPort||18800));
+    if(cdp.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(cdp.hostname)) throw new Error('Expected local managed browser');
+    const action=process.argv[1],target=process.argv[2];
+    if(target&&!/^[A-Za-z0-9-]{1,128}$/.test(target)) throw new Error('Invalid target');
+    let result;
+    if(action==='list') {
+      const tabs=await(await fetch(new URL('/json/list',cdp))).json();
+      result=tabs.filter(t=>t.type==='page').map(t=>t.id);
+    } else if(action==='open') {
+      const response=await fetch(new URL('/json/new?'+encodeURIComponent('https://example.com'),cdp),{method:'PUT'});
+      if(!response.ok) throw new Error('Could not open test tab');
+      result={id:(await response.json()).id};
+    } else if(action==='close') {
+      const response=await fetch(new URL('/json/close/'+target,cdp));
+      if(!response.ok) throw new Error('Could not close test tab');
+      result={ok:true};
+    } else if(action==='navigate') {
+      const tabs=await(await fetch(new URL('/json/list',cdp))).json();
+      const page=tabs.find(t=>t.id===target);
+      if(!page) throw new Error('Missing test tab');
+      const url=new URL(page.webSocketDebuggerUrl);
+      if(url.protocol!=='ws:'||!['127.0.0.1','localhost','[::1]'].includes(url.hostname)||url.port!==cdp.port) throw new Error('Invalid CDP endpoint');
+      const socket=new WebSocket(url);
+      await new Promise((resolve,reject)=>{socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',reject,{once:true});});
+      result=await new Promise((resolve,reject)=>{
+        const timer=setTimeout(()=>reject(new Error('Navigation timed out')),10000);
+        socket.addEventListener('message',({data})=>{const m=JSON.parse(data);if(m.id===1){clearTimeout(timer);m.error?reject(new Error('Navigation failed')):resolve({ok:true});}});
+        socket.send(JSON.stringify({id:1,method:'Page.navigate',params:{url:'https://example.org'}}));
+      });
+      socket.close();
+    } else throw new Error('Unsupported check');
+    console.log(JSON.stringify(result));
+  `;
+  try { return JSON.parse((await exec('docker', ['exec', container, 'node', '--input-type=module', '-e', source, action, target], { timeout: 20000 })).stdout); }
+  catch { throw new Error(`Managed browser ${action} check failed`); }
+};
 const helper = async (action, targetId) => JSON.parse((await exec('docker', ['exec', '-w', '/home/node/.openclaw/workspace', container, 'node', 'remote-connect/session.mjs', action, ...(targetId ? [targetId] : [])], { timeout: 30000 })).stdout);
 let tab;
+let previousTabs = [];
 let created = false;
 try {
-  await cli('start');
-  const opened = JSON.parse(await cli('open', 'https://example.com', '--json'));
-  tab = opened.targetId || opened.id;
-  assert.ok(tab, 'OpenClaw returned the test tab');
+  try { previousTabs = await browser('list'); }
+  catch { await cli('start'); previousTabs = await browser('list'); }
+  const opened = await browser('open');
+  assert.ok(opened.id && !previousTabs.includes(opened.id), 'Verification created a new disposable tab');
+  tab = opened.id;
   let session;
   if (process.env.REMOTE_CONNECT_VERIFY_AGENT === '1') {
     // No --deliver: this exercises contextual agent behavior without posting
@@ -73,7 +117,7 @@ try {
   assert.equal(Buffer.from(pixels.image, 'base64').readUInt16BE(0), 0xffd8, 'Real JPEG pixels');
   // The original smoke check fetched one still image. Keep reading through a
   // real page navigation to exercise the browser lifecycle that login uses.
-  const navigation = cli('navigate', 'https://example.org', '--target-id', tab);
+  const navigation = browser('navigate', tab).then(() => undefined, error => error);
   let healthyFrames = 0;
   for (let attempt=0; attempt<12; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 300));
@@ -86,7 +130,8 @@ try {
     assert.equal((await response.json()).targetId, tab, 'Same browser tab remains attached');
     healthyFrames++;
   }
-  await navigation;
+  const navigationError = await navigation;
+  if (navigationError) throw navigationError;
   assert.ok(healthyFrames > 0, 'Browser recovered with the original viewer cookie');
   const activeStatus = await helper('status');
   assert.equal(activeStatus.status, 'connected');
@@ -97,5 +142,10 @@ try {
   console.log(`PASS ${tenant}: helper → public HTTPS page/code → actual browser pixels across navigation → same viewer cookie → Done → Claw status. No login credentials used.`);
 } finally {
   if (created) await helper('revoke').catch(() => {});
-  if (tab) await cli('close', tab).catch(() => {});
+  if (tab) {
+    await browser('close', tab);
+    const remaining = await browser('list');
+    assert.ok(previousTabs.every(id => remaining.includes(id)), 'Verification preserves all pre-existing browser tabs');
+    console.log('PASS: only the disposable verification tab was closed; every pre-existing tab remains.');
+  }
 }
