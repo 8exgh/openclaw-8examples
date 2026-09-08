@@ -4,7 +4,7 @@ import { installRemoteWorkspace } from './workspace.mjs';
 
 const root = process.env.MOC_ROOT;
 if (!root) throw new Error('Set MOC_ROOT to the managed-openclaw checkout');
-const selected = process.argv[2];
+const selected = process.argv[2] === '*' ? undefined : process.argv[2];
 const tenants = JSON.parse(readFileSync(path.join(root, 'data/tenants.json'), 'utf8'));
 let count = 0;
 for (const tenant of tenants) {

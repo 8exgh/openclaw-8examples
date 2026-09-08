@@ -69,8 +69,8 @@ implementation. It does not automatically send a chat message on Done.
    through the public site. `verify_agent=true` also asks the actual canary agent
    to create the handoff from a normal login request (one model turn, no chat
    delivery; allows up to five minutes for the configured provider).
-   Rerun the broker workflow with an empty
-   tenant input to install instructions across the container fleet. Future
+   Rerun the broker workflow with `all_tenants=true`
+   to install instructions across the container fleet. Future
    tenant renders preserve the scoped credential and reinstall the helper.
 
 Server7 must be able to reach the fleet's private Tailscale address (including
