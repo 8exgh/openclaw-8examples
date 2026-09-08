@@ -7,6 +7,30 @@ export function remoteInstructions() {
   return readFileSync(new URL('remote-connect/AGENTS.md', templates), 'utf8');
 }
 
+export function installRemoteRuntime(dir) {
+  const configFile = path.join(dir, 'config/openclaw.json');
+  if (!existsSync(configFile)) return;
+  const pluginDir = path.join(dir, 'config/extensions/managed-remote-login');
+  mkdirSync(pluginDir, { recursive: true });
+  for (const name of ['index.mjs', 'package.json', 'openclaw.plugin.json']) {
+    const file = path.join(pluginDir, name);
+    writeFileSync(file, readFileSync(new URL(`./plugin/${name}`, import.meta.url)));
+    if (process.getuid?.() === 0) chownSync(file, 1000, 1000);
+  }
+  if (process.getuid?.() === 0) chownSync(pluginDir, 1000, 1000);
+  const config = JSON.parse(readFileSync(configFile, 'utf8'));
+  const before = JSON.stringify(config);
+  config.plugins ??= {};
+  config.plugins.entries ??= {};
+  config.plugins.entries['managed-remote-login'] = { enabled: true, hooks: { allowConversationAccess: true, allowPromptInjection: true } };
+  config.plugins.load ??= {};
+  config.plugins.load.paths ??= [];
+  const location = '/home/node/.openclaw/extensions/managed-remote-login';
+  if (!config.plugins.load.paths.includes(location)) config.plugins.load.paths.push(location);
+  if (Array.isArray(config.plugins.allow) && !config.plugins.allow.includes('managed-remote-login')) config.plugins.allow.push('managed-remote-login');
+  if (JSON.stringify(config) !== before) writeFileSync(configFile, JSON.stringify(config, null, 2) + '\n');
+}
+
 // Also used by a dedicated rollout that does not restart or reconfigure Claws.
 export function installRemoteWorkspace(dir, tenant, origin = 'https://8examples.com') {
   const workspace = path.join(dir, 'workspace');

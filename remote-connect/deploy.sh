@@ -11,6 +11,8 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 DEST=/opt/openclaw-remote-connect
 install -d -m 0755 "$DEST/remote-connect" "$DEST/templates/workspace/remote-connect" "$DEST/templates/workspace/skills/remote-login"
 install -m 0644 "$HERE"/remote-connect/*.mjs "$DEST/remote-connect/"
+install -d -m 0755 "$DEST/remote-connect/plugin"
+install -m 0644 "$HERE"/remote-connect/plugin/* "$DEST/remote-connect/plugin/"
 install -m 0644 "$HERE"/templates/workspace/remote-connect/* "$DEST/templates/workspace/remote-connect/"
 install -m 0644 "$HERE/templates/workspace/skills/remote-login/SKILL.md" "$DEST/templates/workspace/skills/remote-login/"
 install -d -m 0700 /etc/openclaw

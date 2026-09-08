@@ -20,6 +20,12 @@ before verifying login and continuing. It can also `session.mjs revoke`.
   helper and contextual instructions, included in every container tenant render.
   The instructions explicitly replace obsolete VNC/portal links in older
   conversations and prohibit loopback or private addresses as login links.
+- `remote-connect/plugin/` adds this capability to native runtime system
+  context. Explicit takeover requests in private conversations create the
+  session directly through the helper, so stale conversation history cannot
+  substitute a local VNC link. Shared rooms first move to private chat;
+  other requests use the normal agent. A browser that is not running is left
+  to the agent to start and open to the intended site.
   `AGENTS.md` tells the Claw to offer this for login, password, MFA, or CAPTCHA,
   share both link and code, then stop inspecting/controlling the browser until
   control is returned. Pausing other automation is an agent instruction, not a
@@ -80,6 +86,9 @@ implementation. It does not automatically send a chat message on Done.
    tenant renders preserve the scoped credential and reinstall the helper.
    Use `workspace_only=true` for instruction/helper corrections: it leaves
    the broker and browser processes running, preserving active connections.
+   Set `runtime_hooks=true` to install the native handoff plugin too. This
+   changes the Claw's plugin configuration; OpenClaw reloads its gateway when
+   idle. Start with the canary, then roll out with `all_tenants=true`.
 
 Server7 must be able to reach the fleet's private Tailscale address (including
 from `nextjs-8examples`); the deployment verification fails if the route or tailnet
@@ -101,6 +110,12 @@ npm run typecheck
 E2E_TEST_BUILD=1 npm --prefix ../8examples run build
 node remote-connect/e2e.mjs
 ```
+
+`remote-connect/verify-hooks.mjs <plugin-directory>` runs inside an OpenClaw
+container and boots an isolated gateway with a local mock model and helper. It
+verifies that private takeover requests invoke the helper without a model call,
+that ordinary prompts receive the runtime context, and that leading zeroes in
+codes survive. It inherits no live channel tokens or provider credentials.
 
 The last test boots an isolated **real OpenClaw graphical browser**, broker, and
 production Next.js site, then drives the viewer through Playwright. It enters

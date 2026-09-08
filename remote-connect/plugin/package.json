@@ -1,0 +1,6 @@
+{
+  "name": "@8examples/openclaw-remote-login",
+  "version": "1.0.0",
+  "type": "module",
+  "openclaw": { "extensions": ["./index.mjs"] }
+}

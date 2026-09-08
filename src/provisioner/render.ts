@@ -16,7 +16,7 @@ import { CAPABILITIES, capability } from '../capabilities/registry.js';
 import { TEMPLATES_DIR, tenantDir } from '../store.js';
 import type { CapabilityId, Fleet, Tenant } from '../types.js';
 import { asDockerMem, resourcesFor } from './resources.js';
-import { installRemoteWorkspace, remoteInstructions } from '../../remote-connect/workspace.mjs';
+import { installRemoteRuntime, installRemoteWorkspace, remoteInstructions } from '../../remote-connect/workspace.mjs';
 
 /** The openclaw image runs as `node`, uid/gid 1000 — bind mounts must be writable by it. */
 const CONTAINER_UID = 1000;
@@ -777,6 +777,9 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
   const delivered = path.join(nudgesDir, 'DELIVERED.md');
   if (!existsSync(delivered)) writeFileSync(delivered, '# Delivered nudges\n\n');
 
-  if (tenant.tier !== 'desktop') installRemoteWorkspace(dir, tenant.id);
+  if (tenant.tier !== 'desktop') {
+    installRemoteWorkspace(dir, tenant.id);
+    installRemoteRuntime(dir);
+  }
   return renderEnv(tenant, dir);
 }
