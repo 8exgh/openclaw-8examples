@@ -109,6 +109,20 @@ async function handle(action, data) {
   throw new Error('Unsupported action');
 }
 
+async function recoverClosedTab() {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const pages = await tabs();
+    if (!pages.some((page) => page.id === targetId)) {
+      const previous = history.slice().reverse().find((id) => pages.some((page) => page.id === id));
+      if (!previous && !pages.length) return false;
+      await select(previous || pages[0].id);
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
+}
+
 // Serial input preserves keystroke/click order. stdin close or broker failure
 // ends only this attachment, never Chromium (its profile/cookies stay intact).
 let queue = Promise.resolve();
@@ -119,6 +133,15 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       request = JSON.parse(line);
       emit({ id: request.id, result: await handle(request.action, request.data || {}) });
     } catch {
+      // Clicking the final OAuth button may close that tab before CDP can
+      // acknowledge mouseReleased (or an in-flight screenshot). Recover the
+      // attachment; never replay the click/text on the underlying login page.
+      try {
+        if (['input', 'frame', 'tabs'].includes(request?.action) && await recoverClosedTab()) {
+          emit({ id: request.id, result: request.action === 'input' ? { ok: true } : await handle(request.action, request.data || {}) });
+          return;
+        }
+      } catch { /* Browser itself is gone: return the bounded error below. */ }
       emit({ id: request?.id, error: 'Browser unavailable. Ask your Claw to open the login tab and create a new connection.' });
     }
   });
