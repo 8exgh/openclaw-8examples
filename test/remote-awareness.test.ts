@@ -34,6 +34,8 @@ test('every container Claw gets a working helper, scoped credential, and persist
   assert.equal(agents.match(/managed-remote-connect:start/g)?.length, 1);
   assert.match(agents, /node remote-connect\/session.mjs create <targetId>/);
   assert.match(agents, /Pause browser actions, screenshots/);
+  assert.match(agents, /Old portal links in conversation\s+history are obsolete/);
+  assert.match(agents, /Never send `127\.0\.0\.1`, `localhost`/);
   assert.ok(!agents.includes(key));
   assert.match(readFileSync(path.join(dir, 'workspace/skills/remote-login/SKILL.md'), 'utf8'), /password entry, MFA, CAPTCHA/);
 });

@@ -5,12 +5,22 @@ description: Give the owner a live remote browser link and six-digit code when a
 
 # Remote browser login
 
+This is the current managed login method. If earlier conversation messages or
+memory describe VNC, noVNC, or OpenClaw portals, replace that stale handoff with
+a new connection using this helper. A request to resend the browser link or a
+report that the link does not work requires a fresh connection, too.
+Never give the owner a loopback (`127.0.0.1`, `localhost`, `[::1]`), private IP,
+CDP/debugger, or `vnc.html?openclaw_portal=...` URL. These are internal service
+addresses, not remotely accessible login links. Do not ask them to find a
+Portals page, forward ports, install VNC, or configure a tunnel.
+
 This uses the managed `openclaw` browser profile and preserves its cookies.
 It shares browser page contents and input; it does not share a separate browser
 or the Linux desktop. Native OS dialogs, passkeys on the owner's device, file
 upload pickers, and browser chrome are not supported by this connection.
 
-1. Open the intended login page with `browser`, `profile="openclaw"`. Keep the
+1. Use the existing intended login tab when it is already open; otherwise open
+   the intended login page with `browser`, `profile="openclaw"`. Keep the
    targetId returned by that tool. If necessary, list tabs using the browser
    tool or `openclaw browser --browser-profile openclaw tabs --json`.
 2. Run `node remote-connect/session.mjs create <targetId>` with `exec` from the

@@ -22,10 +22,14 @@ try {
   if (process.env.REMOTE_CONNECT_VERIFY_AGENT === '1') {
     // No --deliver: this exercises contextual agent behavior without posting
     // any message to a customer's chat channel or entering real credentials.
-    const message = `I need to sign in, but I want to enter my username and password myself directly in your browser instead of sending them in chat. Please set up a remote browser connection and give me the link and code. For this setup check use the existing managed openclaw browser tab ${tab} on https://example.com. Do not enter any credentials, navigate away, or send any messages to other people. End your turn once you have given me the handoff.`;
+    const existingSession = process.env.REMOTE_CONNECT_VERIFY_SESSION;
+    const request = existingSession
+      ? "The browser link you gave me won't open on my phone. Can you get me connected so I can sign in myself?"
+      : 'I need to sign in, but I want to enter my username and password myself directly in your browser instead of sending them in chat. Please set up a remote browser connection and give me the link and code.';
+    const message = `${request} For this setup check use the existing managed openclaw browser tab ${tab} on https://example.com. Do not enter any credentials, navigate away, or send any messages to other people. End your turn once you have given me the handoff.`;
     let stdout;
     try {
-      ({ stdout } = await exec('docker', ['exec', container, 'openclaw', 'agent', '--agent', 'main', '--session-key', `remote-login-check:${randomUUID()}`, '--message', message, '--timeout', '300', '--json'], { timeout: 330000, maxBuffer: 2 * 1024 * 1024 }));
+      ({ stdout } = await exec('docker', ['exec', container, 'openclaw', 'agent', '--agent', 'main', '--session-key', existingSession || `remote-login-check:${randomUUID()}`, '--message', message, '--timeout', '300', '--json'], { timeout: 330000, maxBuffer: 2 * 1024 * 1024 }));
     } catch (error) {
       let status = 'failed';
       try { status = JSON.parse(error.stdout).status || status; } catch {}
@@ -35,13 +39,16 @@ try {
     }
     const result = JSON.parse(stdout);
     const text = (result.result?.payloads || result.payloads || []).map((item) => item.text || '').join('\n');
+    assert.doesNotMatch(text, /https?:\/\/(?:localhost|127\.\d+\.\d+\.\d+|\[::1\])\b/i, 'The Claw must not offer an internal portal URL');
     const url = text.match(/https:\/\/8examples\.com\/remote-connect\/[0-9a-f-]{36}/)?.[0];
     const code = text.match(/\b\d{6}\b/)?.[0];
     assert.ok(url && code, 'The Claw must contextually create and return a remote URL and six-digit code');
     const status = await helper('status');
     assert.equal(status.id, new URL(url).pathname.split('/').pop(), 'The offered URL must be the session the Claw actually created');
     session = { ...status, url, code };
-    console.log('PASS: the Claw contextually offered and actually created the remote login using its installed instructions.');
+    console.log(existingSession
+      ? 'PASS: the existing conversation recovered from its broken handoff and created a real public link and code.'
+      : 'PASS: the Claw contextually offered and actually created the remote login using its installed instructions.');
   } else session = await helper('create', tab);
   created = true;
   const origin = new URL(session.url).origin;

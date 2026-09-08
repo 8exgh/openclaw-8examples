@@ -18,6 +18,8 @@ before verifying login and continuing. It can also `session.mjs revoke`.
 
 - `templates/workspace/remote-connect/` and `skills/remote-login/`: installed
   helper and contextual instructions, included in every container tenant render.
+  The instructions explicitly replace obsolete VNC/portal links in older
+  conversations and prohibit loopback or private addresses as login links.
   `AGENTS.md` tells the Claw to offer this for login, password, MFA, or CAPTCHA,
   share both link and code, then stop inspecting/controlling the browser until
   control is returned. Pausing other automation is an agent instruction, not a
