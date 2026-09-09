@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { openInbox } from './store.mjs';
+import { openInbox, bindOwner } from './store.mjs';
 import { createInboxEngine } from './inbox.mjs';
 
 export const instructions = `Phone conversation handoff is installed. The attached call records belong to this Claw and are automatically loaded across phone and owner chat. When the owner refers to a call, meeting, "that time", or says "yes, confirm", use the relevant call record and recent conversation before claiming you lack context. A reply to a call notification identifies that call. If multiple pending proposals fit, ask which one; do not guess.
@@ -29,6 +29,7 @@ export default {
         const url = new URL(endpoint);
         if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid phone gateway URL');
         const stateDir = ctx.stateDir || process.env.OPENCLAW_STATE_DIR || '/home/node/.openclaw';
+        const historyNotBefore = bindOwner(path.join(stateDir, 'phone-handoff', 'owner.sqlite'), createHash('sha256').update(JSON.stringify(owner)).digest('hex'));
         const scope = createHash('sha256').update(JSON.stringify([endpoint, key, owner])).digest('hex');
         store = openInbox(path.join(stateDir, 'phone-handoff', scope, 'inbox.sqlite'));
         const sdk = await import('openclaw/plugin-sdk/session-transcript-runtime');
@@ -39,7 +40,7 @@ export default {
           if (!response.ok) throw new Error(`Phone gateway HTTP ${response.status}`);
           return response.json();
         };
-        engine = createInboxEngine({ store, request, activationAt: config.activationAt, onError: error,
+        engine = createInboxEngine({ store, request, activationAt: config.activationAt, historyNotBefore, onError: error,
           deliver: async body => {
             const adapter = await api.runtime.channel.outbound.loadAdapter(owner.channel);
             if (!adapter?.sendText) throw new Error('Private channel delivery is unavailable');

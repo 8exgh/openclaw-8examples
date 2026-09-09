@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { openInbox } from './plugin/store.mjs';
+import { openInbox, bindOwner } from './plugin/store.mjs';
 import { createInboxEngine } from './plugin/inbox.mjs';
 
 const at = '2026-09-09T18:00:00Z';
@@ -81,4 +81,17 @@ test('notification failures preserve context; a successful notification is not r
 test('historical calls are available as references without notifying the owner again', async t => {
   const f = fixture(t); f.calls[0].startedAt = '2026-09-08T18:00:00Z'; await f.engine.sync();
   assert.equal(f.delivered.length, 0); assert.equal(f.engine.context().calls[0].status, 'reference');
+});
+test('reassigning an owner blocks old saved and gateway history even when the phone credential is reused', async t => {
+  const f = fixture(t); await f.engine.sync();
+  const dir = mkdtempSync(path.join(tmpdir(), 'phone-owner-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const binding = path.join(dir, 'owner.sqlite'), now = Date.parse('2026-09-09T18:10:00Z');
+  assert.equal(bindOwner(binding, 'owner-a', now), '1970-01-01T00:00:00.000Z');
+  const since = bindOwner(binding, 'owner-b', now);
+  assert.equal(since, new Date(now).toISOString()); assert.equal(bindOwner(binding, 'owner-b', now + 10000), since);
+  const engine = createInboxEngine({ store: f.store, historyNotBefore: since, now: () => now,
+    request: async () => f.calls, deliver: async () => { throw new Error('Must not notify about a prior owner’s call'); } });
+  await engine.sync(); assert.equal(engine.context().calls.length, 0);
+  await assert.rejects(engine.tool({ action: 'read', callId: 'call-one' }), /not found/);
+  assert.equal(bindOwner(binding, 'owner-a', now + 20000), new Date(now + 20000).toISOString());
 });

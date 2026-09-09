@@ -2,6 +2,20 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, chmodSync } from 'node:fs';
 import path from 'node:path';
 
+// A changed owner must not re-import the prior owner's records even if an
+// operator keeps the same gateway credential during reassignment.
+export function bindOwner(file, owner, now = Date.now()) {
+  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const db = new DatabaseSync(file); chmodSync(file, 0o600);
+  try {
+    db.exec('PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS binding (id INTEGER PRIMARY KEY, owner TEXT NOT NULL, since TEXT NOT NULL); BEGIN IMMEDIATE;');
+    const prior = db.prepare('SELECT owner,since FROM binding WHERE id=1').get();
+    const since = prior && prior.owner !== owner ? new Date(now).toISOString() : prior?.since || '1970-01-01T00:00:00.000Z';
+    db.prepare('INSERT INTO binding VALUES (1,?,?) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,since=excluded.since').run(owner, since);
+    db.exec('COMMIT'); return since;
+  } finally { db.close(); }
+}
+
 export function openInbox(file) {
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(file);

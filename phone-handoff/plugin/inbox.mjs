@@ -25,8 +25,10 @@ export function notification(call) {
     `The call is saved in our conversation. Reply here to discuss it or tell me what to do next.\nCall reference: ${call.id}`;
 }
 
-export function createInboxEngine({ store, request, deliver, mirror, now = () => Date.now(), activationAt, onError = () => {} }) {
+export function createInboxEngine({ store, request, deliver, mirror, now = () => Date.now(), activationAt, historyNotBefore = '1970-01-01T00:00:00Z', onError = () => {} }) {
   const activated = store.metadata('activationAt', activationAt || new Date(now()).toISOString());
+  const belongsToOwner = call => Date.parse(call.startedAt) >= Date.parse(historyNotBefore);
+  const visibleCalls = () => store.list().filter(belongsToOwner);
   let syncing;
   async function sync() {
     if (syncing) return syncing;
@@ -37,7 +39,7 @@ export function createInboxEngine({ store, request, deliver, mirror, now = () =>
       const started = Date.now();
       let imported = 0;
       for (const item of records.slice().sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)))) {
-        if (!callId.test(item?.id) || !['ended', 'failed'].includes(item.status) || Date.parse(item.startedAt) < cutoff || store.get(item.id)) continue;
+        if (!callId.test(item?.id) || !['ended', 'failed'].includes(item.status) || !belongsToOwner(item) || Date.parse(item.startedAt) < cutoff || store.get(item.id)) continue;
         if (imported >= 10 || Date.now() - started > 8000) break;
         const record = await request('GET', `/orchestrations/${item.id}`);
         if (record.id !== item.id) throw new Error('Phone history identity mismatch');
@@ -47,7 +49,7 @@ export function createInboxEngine({ store, request, deliver, mirror, now = () =>
         imported++;
       }
       store.setMetadata('lastSyncAt', new Date(now()).toISOString());
-      for (const call of store.list()) {
+      for (const call of visibleCalls()) {
         const attemptId = `notice:${call.id}`;
         const attempt = store.attempt(attemptId);
         // Import existing calls for context without replaying old notifications.
@@ -78,7 +80,7 @@ export function createInboxEngine({ store, request, deliver, mirror, now = () =>
     return syncing;
   }
   function context() {
-    const all = store.list();
+    const all = visibleCalls();
     const pending = all.filter(call => call.status === 'pending' || call.status === 'working');
     const recent = all.filter(call => !pending.includes(call)).slice(0, 3);
     return { pendingCount: pending.length, calls: [...pending.slice(0, 8), ...recent].map(call => ({
@@ -91,7 +93,7 @@ export function createInboxEngine({ store, request, deliver, mirror, now = () =>
     if (args.action === 'list') { await sync(); return context(); }
     if (!callId.test(args.callId || '')) throw new Error('Use a callId from this inbox');
     const call = store.get(args.callId);
-    if (!call) throw new Error('Call not found in this Claw’s inbox');
+    if (!call || !belongsToOwner(call)) throw new Error('Call not found in this Claw’s inbox');
     if (args.action === 'read') return call;
     if (args.action === 'publish') {
       if (!text(args.summary).trim()) throw new Error('Provide the factual call summary');
@@ -105,7 +107,7 @@ export function createInboxEngine({ store, request, deliver, mirror, now = () =>
       if (call.status === 'resolved') return { status: 'already_resolved', outcome: call.outcome };
       const existing = store.attempt(`callback:${call.id}`);
       if (existing) return { ...existing, repeated: true, instruction: 'Check the existing callback; do not create another call.' };
-      if (store.list().filter(item => item.status === 'pending' || item.status === 'working').length > 1 && selectedCallId !== call.id) throw new Error('Several calls need a decision. Ask the owner to reply to the relevant call notice before calling back.');
+      if (visibleCalls().filter(item => item.status === 'pending' || item.status === 'working').length > 1 && selectedCallId !== call.id) throw new Error('Several calls need a decision. Ask the owner to reply to the relevant call notice before calling back.');
       if (!text(args.goal).trim()) throw new Error('Provide the owner-authorized callback goal');
       const to = call.direction === 'inbound' ? call.from : call.to;
       if (!/^\+[1-9]\d{7,14}$/.test(to)) throw new Error('This call has no verified callback number');
