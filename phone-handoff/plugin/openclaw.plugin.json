@@ -1,0 +1,16 @@
+{
+  "id":"managed-phone-handoff",
+  "name":"8Examples phone conversation handoff",
+  "version":"1.0.0",
+  "activation":{"onStartup":true},
+  "contracts":{"tools":["phone_handoff"]},
+  "configSchema":{
+    "type":"object","additionalProperties":false,
+    "properties":{
+      "owner":{"type":"object","additionalProperties":false,"required":["channel","peer"],"properties":{"channel":{"type":"string","enum":["telegram","whatsapp","signal"]},"peer":{"type":"string"},"accountId":{"type":"string"}}},
+      "activationAt":{"type":"string"},
+      "pollMs":{"type":"integer","minimum":1000,"maximum":300000}
+    },
+    "required":["owner"]
+  }
+}

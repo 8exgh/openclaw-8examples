@@ -7,7 +7,7 @@
   "scripts": {
     "cli": "tsx src/cli.ts",
     "serve": "tsx src/cli.ts serve",
-    "test": "node --import tsx --test test/*.test.ts remote-connect/*.test.mjs",
+    "test": "node --import tsx --test test/*.test.ts remote-connect/*.test.mjs phone-handoff/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

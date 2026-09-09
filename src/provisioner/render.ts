@@ -17,6 +17,7 @@ import { TEMPLATES_DIR, tenantDir } from '../store.js';
 import type { CapabilityId, Fleet, Tenant } from '../types.js';
 import { asDockerMem, resourcesFor } from './resources.js';
 import { installRemoteRuntime, installRemoteWorkspace, remoteInstructions } from '../../remote-connect/workspace.mjs';
+import { installPhoneHandoff } from '../../phone-handoff/install.mjs';
 
 /** The openclaw image runs as `node`, uid/gid 1000 — bind mounts must be writable by it. */
 const CONTAINER_UID = 1000;
@@ -36,7 +37,7 @@ function ensureDirForContainer(dir: string, mode = 0o755): void {
 }
 
 /** Bump when the managed layer changes in a way not captured by template files. */
-export const MANAGED_LAYER_VERSION = '0.2.0';
+export const MANAGED_LAYER_VERSION = '0.2.1';
 
 /** Credentials capable of funding model calls; suppressed inventory may not mount any of them. */
 export const MODEL_CREDENTIAL_KEYS = [
@@ -780,6 +781,7 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
   if (tenant.tier !== 'desktop') {
     installRemoteWorkspace(dir, tenant.id);
     installRemoteRuntime(dir);
+    installPhoneHandoff(dir, tenant);
   }
   return renderEnv(tenant, dir);
 }
