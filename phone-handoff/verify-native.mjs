@@ -23,7 +23,7 @@ const server = http.createServer(async (req, res) => {
   if (req.url.startsWith('/orchestrations')) {
     assert.equal(req.headers.authorization, 'Bearer synthetic-phone-key');
     if (req.method === 'POST') { callbacks++; return json({ orchestrationId: 'callback-fixture' }); }
-    if (req.url.includes('?')) return json(calls);
+    if (req.url.includes('?')) return json({ count: calls.length, orchestrations: calls });
     return json(calls.find(call => req.url.endsWith('/' + call.id)) || { id: 'callback-fixture', status: 'ended', direction: 'outbound', turns: [{ role: 'caller', text: 'Yes, we are confirmed.' }] });
   }
   if (req.url.startsWith('/bot')) {

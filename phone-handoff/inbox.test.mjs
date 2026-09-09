@@ -22,7 +22,7 @@ function fixture(t) {
       if (postFailure) throw new Error('Synthetic lost acknowledgment');
       return { orchestrationId: 'callback-one' };
     }
-    if (url.includes('?')) return calls;
+    if (url.includes('?')) return { count: calls.length, orchestrations: calls };
     if (url.endsWith('/callback-one')) return { id: 'callback-one', status: 'ended', direction: 'outbound', startedAt: '2026-09-09T18:10:01Z', to: '+15555550123', turns: [{ role: 'caller', text: 'Confirmed.' }] };
     return calls.find(call => url.endsWith('/' + call.id));
   };
@@ -90,7 +90,7 @@ test('reassigning an owner blocks old saved and gateway history even when the ph
   const since = bindOwner(binding, 'owner-b', now);
   assert.equal(since, new Date(now).toISOString()); assert.equal(bindOwner(binding, 'owner-b', now + 10000), since);
   const engine = createInboxEngine({ store: f.store, historyNotBefore: since, now: () => now,
-    request: async () => f.calls, deliver: async () => { throw new Error('Must not notify about a prior owner’s call'); } });
+    request: async () => ({ count: f.calls.length, orchestrations: f.calls }), deliver: async () => { throw new Error('Must not notify about a prior owner’s call'); } });
   await engine.sync(); assert.equal(engine.context().calls.length, 0);
   await assert.rejects(engine.tool({ action: 'read', callId: 'call-one' }), /not found/);
   assert.equal(bindOwner(binding, 'owner-a', now + 20000), new Date(now + 20000).toISOString());

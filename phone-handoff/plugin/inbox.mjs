@@ -33,8 +33,9 @@ export function createInboxEngine({ store, request, deliver, mirror, now = () =>
   async function sync() {
     if (syncing) return syncing;
     syncing = (async () => {
-      const records = await request('GET', '/orchestrations?limit=100');
-      if (!Array.isArray(records)) throw new Error('Invalid phone history response');
+      const response = await request('GET', '/orchestrations?limit=100');
+      const records = response?.orchestrations;
+      if (!Array.isArray(records) || response.count !== records.length) throw new Error('Invalid phone history response');
       const cutoff = now() - 7 * 86400000;
       const started = Date.now();
       let imported = 0;
