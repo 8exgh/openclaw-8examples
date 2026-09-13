@@ -1,0 +1,8 @@
+{
+  "id": "managed-remote-terminal",
+  "name": "8Examples remote terminal",
+  "description": "Private terminal handoff with a real temporary link and one-time code.",
+  "version": "1.0.0",
+  "activation": { "onStartup": true },
+  "configSchema": { "type": "object", "additionalProperties": false, "properties": {} }
+}

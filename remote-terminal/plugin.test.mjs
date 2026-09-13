@@ -1,0 +1,22 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import plugin, { requestsTerminal } from './plugin/index.mjs';
+test('handoff routing is explicit, private and produces a real helper response', async t => {
+  for (const prompt of ['Open a remote terminal', 'Can you give me a terminal link?', 'remote terminal']) assert(requestsTerminal(prompt), prompt);
+  for (const prompt of ['Design a remote terminal', 'Do not open a remote terminal', 'Open a remote browser', 'Explain your shell']) assert(!requestsTerminal(prompt), prompt);
+  const workspace = mkdtempSync(path.join(tmpdir(), 'terminal-plugin-')); t.after(() => rmSync(workspace, { recursive: true, force: true }));
+  mkdirSync(path.join(workspace, 'remote-terminal'));
+  writeFileSync(path.join(workspace, 'remote-terminal/account.json'), '{}');
+  writeFileSync(path.join(workspace, 'remote-terminal/session.mjs'), `console.log(JSON.stringify({url:'https://8examples.com/remote-terminal/00000000-0000-4000-8000-000000000000',code:'000123',expiresAt:'2099-01-01T00:00:00Z'}))`);
+  const hooks = {}; plugin.register({ config: {}, on(name, handler) { hooks[name] = handler; } });
+  const event = { cleanedBody: 'Open a remote terminal' };
+  const direct = await hooks.before_agent_reply(event, { workspaceDir: workspace, sessionKey: 'agent:main:telegram:direct:123' });
+  assert.match(direct.reply.text, /000123/); assert.match(direct.reply.text, /remote-terminal\//);
+  const group = await hooks.before_agent_reply(event, { workspaceDir: workspace, sessionKey: 'agent:main:telegram:group:123' });
+  assert.match(group.reply.text, /private chat/); assert(!group.reply.text.includes('https://'));
+  assert.equal(await hooks.before_agent_reply(event, { workspaceDir: workspace, sessionKey: 'unknown' }), undefined);
+  assert.match(hooks.before_prompt_build({}, { workspaceDir: workspace }).appendSystemContext, /REMOTE TERMINAL/);
+});

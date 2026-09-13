@@ -18,6 +18,7 @@ import type { CapabilityId, Fleet, Tenant } from '../types.js';
 import { asDockerMem, resourcesFor } from './resources.js';
 import { installRemoteRuntime, installRemoteWorkspace, remoteInstructions } from '../../remote-connect/workspace.mjs';
 import { installPhoneHandoff } from '../../phone-handoff/install.mjs';
+import { installTerminalWorkspace, terminalInstructions } from '../../remote-terminal/workspace.mjs';
 
 /** The openclaw image runs as `node`, uid/gid 1000 — bind mounts must be writable by it. */
 const CONTAINER_UID = 1000;
@@ -579,7 +580,8 @@ export function renderAgentInstructions(tenant: Tenant): Record<string, string> 
     MANAGED_VERSION: managedVersion(),
   };
   writeFileSync(path.join(workspace, 'AGENTS.md'), template('workspace/AGENTS.md', vars) +
-    (tenant.tier === 'desktop' ? '' : '\n' + remoteInstructions()));
+    (tenant.tier === 'desktop' ? '' : '\n' + remoteInstructions()) +
+    (tenant.tier !== 'desktop' && existsSync(path.join(tenantDir(tenant.id), '.remote-terminal-key')) ? '\n' + terminalInstructions() : ''));
   return vars;
 }
 
@@ -782,6 +784,7 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     installRemoteWorkspace(dir, tenant.id);
     installRemoteRuntime(dir);
     installPhoneHandoff(dir, tenant);
+    if (existsSync(path.join(dir, '.remote-terminal-key'))) installTerminalWorkspace(dir, tenant.id);
   }
   return renderEnv(tenant, dir);
 }
