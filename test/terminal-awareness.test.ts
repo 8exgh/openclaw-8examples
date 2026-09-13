@@ -16,7 +16,12 @@ test('terminal stays off until explicitly installed and survives later tenant in
   const home = path.join(dir, tenant.id), keyPath = path.join(home, '.remote-terminal-key');
   assert(!existsSync(keyPath));
   assert(!readFileSync(path.join(home, 'workspace/AGENTS.md'), 'utf8').includes('managed-remote-terminal'));
-  installTerminalWorkspace(home, tenant.id);
+  const mask = process.umask(0o077);
+  try { installTerminalWorkspace(home, tenant.id); } finally { process.umask(mask); }
+  const installed = JSON.parse(readFileSync(path.join(home, 'config/openclaw.json'), 'utf8'));
+  const plugin = path.join(home, 'config', installed.plugins.load.paths.find((p: string) => p.includes('/managed-remote-terminal/')).replace('/home/node/.openclaw/', ''));
+  for (const directory of [plugin, path.dirname(plugin), path.dirname(path.dirname(plugin))]) assert.equal(statSync(directory).mode & 0o777, 0o755);
+  for (const name of ['index.mjs', 'package.json', 'openclaw.plugin.json']) assert.equal(statSync(path.join(plugin, name)).mode & 0o777, 0o644);
   const key = readFileSync(keyPath, 'utf8');
   renderTenant(tenant, fleet); renderAgentInstructions(tenant);
   assert.equal(readFileSync(keyPath, 'utf8'), key);

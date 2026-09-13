@@ -26,7 +26,14 @@ export function installTerminalWorkspace(dir, tenant, origin = 'https://8example
   const hash = createHash('sha256'); for (const name of names) hash.update(readFileSync(new URL(`./plugin/${name}`, import.meta.url)));
   const relative = `managed-plugins/managed-remote-terminal/${hash.digest('hex')}`;
   const pluginDir = path.join(dir, 'config', relative); mkdirSync(pluginDir, { recursive: true });
-  for (const name of names) writeFileSync(path.join(pluginDir, name), readFileSync(new URL(`./plugin/${name}`, import.meta.url)));
+  // Deployment protects credentials with umask 077. Every code directory must
+  // still be traversable by the gateway user, including mkdir's parent paths.
+  for (const directory of [path.join(dir, 'config/managed-plugins'), path.dirname(pluginDir), pluginDir]) chmodSync(directory, 0o755);
+  for (const name of names) {
+    const file = path.join(pluginDir, name);
+    writeFileSync(file, readFileSync(new URL(`./plugin/${name}`, import.meta.url)));
+    chmodSync(file, 0o644);
+  }
   const configFile = path.join(dir, 'config/openclaw.json');
   const config = JSON.parse(readFileSync(configFile, 'utf8'));
   config.plugins ??= {}; config.plugins.entries ??= {}; config.plugins.load ??= {};

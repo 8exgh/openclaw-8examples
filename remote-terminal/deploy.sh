@@ -47,7 +47,7 @@ WantedBy=multi-user.target
 UNIT
 # Credentials are distinct from the browser's. Install only the explicit canary.
 node --input-type=module - "$DEST/remote-terminal/workspace.mjs" <<'JS'
-import { readFileSync, copyFileSync } from 'node:fs';
+import { readFileSync, copyFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 const { installTerminalWorkspace } = await import(pathToFileURL(process.argv[2]));
@@ -55,9 +55,27 @@ const root = process.env.MOC_ROOT;
 const tenant = JSON.parse(readFileSync(path.join(root, 'data/tenants.json'), 'utf8')).find(t => t.id === 'openclaw1');
 if (!tenant || tenant.offboardedAt || tenant.tier === 'desktop' || tenant.modelAccess === 'suppressed') throw new Error('Canary is not eligible');
 const dir = path.join(root, 'tenants', tenant.id);
-copyFileSync(path.join(dir, 'config/openclaw.json'), path.join(dir, 'config/openclaw.before-remote-terminal.json'));
+const backup = path.join(dir, 'config/openclaw.before-remote-terminal.json');
+if (!existsSync(backup)) copyFileSync(path.join(dir, 'config/openclaw.json'), backup);
 installTerminalWorkspace(dir, tenant.id);
 console.log('Installed the terminal helper and runtime context for openclaw1 only.');
+JS
+docker exec --user node "openclaw-$CANARY" openclaw config validate --json
+# Recover a gateway whose earlier in-process configuration reload failed.
+# Signal only the gateway; leave the container and its browser processes alive.
+docker exec -i --user node "openclaw-$CANARY" node --input-type=module - <<'JS'
+import { readdirSync, readFileSync } from 'node:fs';
+const healthy = async () => { try { return (await fetch('http://127.0.0.1:18789/healthz', { signal: AbortSignal.timeout(2000) })).ok; } catch { return false; } };
+if (!await healthy()) {
+  const gateways = readdirSync('/proc').filter(p => /^\d+$/.test(p)).filter(p => {
+    try { return readFileSync(`/proc/${p}/comm`, 'utf8').trim() === 'openclaw-gatewa'; } catch { return false; }
+  });
+  if (gateways.length !== 1) throw new Error('Expected exactly one canary gateway process');
+  process.kill(Number(gateways[0]), 'SIGUSR1');
+  for (let n = 0; n < 120 && !await healthy(); n++) await new Promise(resolve => setTimeout(resolve, 1000));
+  if (!await healthy()) throw new Error('Canary gateway did not recover after configuration repair');
+}
+console.log('Canary gateway is healthy and its installed configuration is valid.');
 JS
 systemctl daemon-reload
 systemctl enable openclaw-remote-terminal.service
