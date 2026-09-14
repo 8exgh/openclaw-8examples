@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import path from 'node:path';
+import { assertChannelTransports } from './channel-health.mjs';
 const exec = promisify(execFile);
 const root = process.env.MOC_ROOT;
 if (!root) throw new Error('MOC_ROOT is required');
@@ -19,11 +20,12 @@ for (const id of expected) assert(inventory.plugins?.some(p => p.id === id && p.
 console.log(`PASS: all ${expected.length} explicitly enabled plugins load on the installed release.`);
 const health = await cli(['health', '--json']);
 assert.equal(health.ok, true, 'Gateway health');
-for (const [channel, status] of Object.entries(health.channels || {})) {
-  if (!status.configured) continue;
-  assert.notEqual(status.probe?.ok, false, `Configured channel probe failed: ${channel}`);
-  console.log(JSON.stringify({ channel, configured: status.configured, probeOk: status.probe?.ok }));
-}
+const transports = await cli(['channels', 'status', '--probe', '--json']);
+for (const verified of assertChannelTransports(config, transports)) console.log(JSON.stringify(verified));
+const { stdout: startedAt } = await exec('docker', ['inspect', '--format', '{{.State.StartedAt}}', 'openclaw-openclaw1']);
+const recentLogs = await exec('docker', ['logs', '--since', startedAt.trim(), '--tail', '2000', 'openclaw-openclaw1'], { maxBuffer: 8 * 1024 * 1024 });
+assert(!(recentLogs.stdout + recentLogs.stderr).includes('attempt disposed before transcript write'), 'Gateway has rejected messages with a disposed transcript attempt');
+console.log('PASS: enabled channel listeners are live, and recent logs show no disposed transcript attempt.');
 const marker = 'UPGRADE_READY_' + randomUUID().replaceAll('-', '');
 const response = await cli(['agent', '--agent', 'main', '--session-key', `agent:main:upgrade-check:${randomUUID()}`, '--message', `Reply with exactly ${marker}. Do not use tools, contact anyone, or perform any other task.`, '--timeout', '120', '--json']);
 const reply = (response.result?.payloads || response.payloads || []).map(p => p.text || '').join('\n');

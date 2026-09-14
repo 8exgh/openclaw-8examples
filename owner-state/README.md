@@ -93,3 +93,19 @@ migrates workspace files; this upgrade deliberately confines the repair to agent
 databases. The repair runs on the isolated copy first, then on backed-up live
 state while the old Gateway is stopped. A future release must qualify its own
 manifest and migration entry point instead of reusing this pinned adapter.
+
+## Telegram processing recovery
+
+On 2026.9.4, openclaw1 encountered `attempt disposed before transcript write`:
+the Telegram listener and API probe remained healthy, while the same spooled
+message repeatedly failed before a new transcript write. Restarting the existing
+container cleared the stale in-memory attempt and the normal Telegram pipeline
+sent a reply. No session reset, configuration rewrite, or image recreation was
+needed. This is an operational recovery, not an upstream lifecycle code fix.
+
+`recover-openclaw1-telegram.yml` runs a reviewed `source_ref`. Its default is
+read-only; `restart=true` requires the diagnosed error in recent logs and no
+active owner terminal. It checks owner-file fingerprints, container/image IDs,
+other Claws, and a real outbound reply from the normal queue after recovery.
+`verify-upgrade.mjs` now checks enabled accounts' live listeners and probes, plus
+recent disposed-attempt errors, rather than accepting configuration-only health.
