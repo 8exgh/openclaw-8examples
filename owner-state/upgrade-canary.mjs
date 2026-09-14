@@ -93,7 +93,7 @@ if (!apply) {
         const countScript = "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/home/node/.openclaw/agents/main/agent/openclaw-agent.sqlite',{readOnly:true});const counts={};for(const table of ['session_nodes','session_windows','transcript_events'])counts[table]=db.prepare('SELECT COUNT(*) AS n FROM '+table).get().n;console.log(JSON.stringify(counts));db.close();";
         const before = JSON.parse(docker([...common, 'node', '-e', countScript]));
         const originalConfig = readFileSync(path.join(copied, 'config/openclaw.json'), 'utf8');
-        const repair = spawnSync('docker', [...common, 'openclaw', 'doctor', '--session-sqlite', 'import', '--session-sqlite-agent', 'main', '--session-sqlite-store', '/home/node/.openclaw/agents/main/agent/openclaw-agent.sqlite', '--non-interactive', '--json'], { encoding: 'utf8', timeout: 180000, maxBuffer: 4 * 1024 * 1024 });
+        const repair = spawnSync('docker', [...common, 'openclaw', 'doctor', '--session-sqlite', 'compact', '--session-sqlite-agent', 'main', '--session-sqlite-store', '/home/node/.openclaw/agents/main/agent/openclaw-agent.sqlite', '--non-interactive', '--json'], { encoding: 'utf8', timeout: 180000, maxBuffer: 4 * 1024 * 1024 });
         const repairLog = (repair.stdout || '') + (repair.stderr || '');
         privateWrite(path.join(folder, 'isolated-doctor.log'), repairLog);
         console.log(JSON.stringify({ isolatedDoctorExit: repair.status, lines: repairLog.split('\n').slice(-100).map(redact) }));
