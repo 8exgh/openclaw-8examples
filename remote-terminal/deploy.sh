@@ -61,8 +61,8 @@ installTerminalWorkspace(dir, tenant.id);
 console.log('Installed the terminal helper and runtime context for openclaw1 only.');
 JS
 docker exec --user node "openclaw-$CANARY" openclaw config validate --json
-# A failed in-process reload can leave a live process with no HTTP listener.
-# It cannot handle another reload signal. Restart only this unhealthy canary.
+# After config validation, recover a failed in-process reload with a fresh
+# gateway process. Restart only this unhealthy canary.
 if ! docker exec --user node "openclaw-$CANARY" node -e "fetch('http://127.0.0.1:18789/healthz', {signal: AbortSignal.timeout(2000)}).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"; then
   docker restart --time 20 "openclaw-$CANARY"
 fi
