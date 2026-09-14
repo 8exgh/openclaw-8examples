@@ -28,7 +28,7 @@ function composeImage(text, image) {
   if (matches.length !== 1) throw new Error('Expected exactly one canary service image');
   return text.replace(/^    image:.*$/m, `    image: "${image}"`);
 }
-async function waitHealthy(name) {
+async function waitHealthy(name, logDir = backup) {
   for (let n = 0; n < 90; n++) {
     try {
       docker(['exec', name, 'node', '-e', "Promise.all(['/healthz','/readyz'].map(p=>fetch('http://127.0.0.1:18789'+p,{signal:AbortSignal.timeout(1500)}))).then(rs=>process.exit(rs.every(r=>r.ok)?0:1)).catch(()=>process.exit(1));"], { timeout: 6000 });
@@ -36,7 +36,7 @@ async function waitHealthy(name) {
     } catch { await new Promise(resolve => setTimeout(resolve, 1000)); }
   }
   const logs = spawnSync('docker', ['logs', '--tail', '250', name], { encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024 });
-  privateWrite(path.join(backup, `${name}.log`), (logs.stdout || '') + (logs.stderr || ''));
+  privateWrite(path.join(logDir, `${name}.log`), (logs.stdout || '') + (logs.stderr || ''));
   throw new Error(`${name} failed health/readiness checks`);
 }
 function validate(name) {
@@ -81,6 +81,25 @@ if (!apply) {
       const raw = (output.stdout || '') + (output.stderr || '');
       privateWrite(path.join(folder, 'isolated-diagnostic.log'), raw);
       console.log(JSON.stringify({ isolatedStartupExit: output.status, lines: raw.split('\n').slice(-50).map(redact) }));
+      if (/SQLite schema is incomplete or noncanonical/.test(raw)) {
+        const common = ['run', '--rm', '--network', 'none', '--env-file', path.join(folder, 'runtime.env'), '--env', 'OPENCLAW_SKIP_CHANNELS=1', ...mounts, image];
+        const countScript = "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/home/node/.openclaw/agents/main/agent/openclaw-agent.sqlite',{readOnly:true});const counts={};for(const table of ['session_nodes','session_windows','transcript_events'])counts[table]=db.prepare('SELECT COUNT(*) AS n FROM '+table).get().n;console.log(JSON.stringify(counts));db.close();";
+        const before = JSON.parse(docker([...common, 'node', '-e', countScript]));
+        const repair = spawnSync('docker', [...common, 'openclaw', 'doctor', '--fix', '--non-interactive'], { encoding: 'utf8', timeout: 180000, maxBuffer: 4 * 1024 * 1024 });
+        const repairLog = (repair.stdout || '') + (repair.stderr || '');
+        privateWrite(path.join(folder, 'isolated-doctor.log'), repairLog);
+        console.log(JSON.stringify({ isolatedDoctorExit: repair.status, lines: repairLog.split('\n').slice(-100).map(redact) }));
+        const after = JSON.parse(docker([...common, 'node', '-e', countScript]));
+        console.log(JSON.stringify({ beforeRepair: before, afterRepair: after, countsPreserved: JSON.stringify(before) === JSON.stringify(after) }));
+        if (repair.status === 0) {
+          const check = `openclaw-upgrade-repaired-${process.pid}`;
+          try {
+            docker(['run', '-d', '--name', check, '--network', 'none', '--env-file', path.join(folder, 'runtime.env'), '--env', 'OPENCLAW_SKIP_CHANNELS=1', ...mounts, image, 'node', 'openclaw.mjs', 'gateway']);
+            await waitHealthy(check, folder); validate(check);
+            console.log('PASS: the repaired copied state starts successfully on the new version.');
+          } finally { try { docker(['rm', '-f', check]); } catch {} }
+        }
+      }
     }
   }
   process.exit(0);
