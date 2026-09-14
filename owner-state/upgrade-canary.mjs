@@ -71,8 +71,12 @@ if (!apply) {
     }
     // Reproduce startup only on the retained isolated copy, capturing stderr
     // as well as stdout. No live mount, network, channel, or host port is used.
-    const copied = path.join(folder, 'rehearsal');
-    if (existsSync(copied)) {
+    const copied = path.join(folder, 'rehearsal-session-only');
+    if (existsSync(path.join(folder, 'rehearsal'))) {
+      if (!existsSync(copied)) {
+        mkdirSync(copied, { mode: 0o700 });
+        run('tar', ['--extract', '--file', path.join(folder, 'tenant.tar'), '--directory', copied], { timeout: 300000 });
+      }
       const image = `openclaw-owner/openclaw1:stable-${version}-${latest.slice(`openclaw1-${version}-`.length).toLowerCase()}`;
       const name = `openclaw-upgrade-diagnostic-${process.pid}`;
       const mounts = current.Mounts.flatMap(m => ['--mount', `type=bind,src=${m.RW ? path.join(copied, path.relative(dir, m.Source)) : m.Source},dst=${m.Destination}${m.RW ? '' : ',readonly'}`]);
@@ -85,12 +89,13 @@ if (!apply) {
         const common = ['run', '--rm', '--network', 'none', '--env-file', path.join(folder, 'runtime.env'), '--env', 'OPENCLAW_SKIP_CHANNELS=1', ...mounts, image];
         const countScript = "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/home/node/.openclaw/agents/main/agent/openclaw-agent.sqlite',{readOnly:true});const counts={};for(const table of ['session_nodes','session_windows','transcript_events'])counts[table]=db.prepare('SELECT COUNT(*) AS n FROM '+table).get().n;console.log(JSON.stringify(counts));db.close();";
         const before = JSON.parse(docker([...common, 'node', '-e', countScript]));
-        const repair = spawnSync('docker', [...common, 'openclaw', 'doctor', '--fix', '--non-interactive'], { encoding: 'utf8', timeout: 180000, maxBuffer: 4 * 1024 * 1024 });
+        const originalConfig = readFileSync(path.join(copied, 'config/openclaw.json'), 'utf8');
+        const repair = spawnSync('docker', [...common, 'openclaw', 'doctor', '--session-sqlite', 'import', '--session-sqlite-all-agents', '--non-interactive', '--json'], { encoding: 'utf8', timeout: 180000, maxBuffer: 4 * 1024 * 1024 });
         const repairLog = (repair.stdout || '') + (repair.stderr || '');
         privateWrite(path.join(folder, 'isolated-doctor.log'), repairLog);
         console.log(JSON.stringify({ isolatedDoctorExit: repair.status, lines: repairLog.split('\n').slice(-100).map(redact) }));
         const after = JSON.parse(docker([...common, 'node', '-e', countScript]));
-        console.log(JSON.stringify({ beforeRepair: before, afterRepair: after, countsPreserved: JSON.stringify(before) === JSON.stringify(after) }));
+        console.log(JSON.stringify({ beforeRepair: before, afterRepair: after, countsPreserved: JSON.stringify(before) === JSON.stringify(after), configurationUnchanged: readFileSync(path.join(copied, 'config/openclaw.json'), 'utf8') === originalConfig }));
         if (repair.status === 0) {
           const check = `openclaw-upgrade-repaired-${process.pid}`;
           try {
