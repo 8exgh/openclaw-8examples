@@ -87,53 +87,16 @@ function writeConsentMarkers(tenant: Tenant, pkg: string): void {
   }
 }
 
-/**
- * Install any declared plugin this tenant is missing, and record the
- * capability consent 2026.8.1 requires for every plugin already on disk
- * (hand-installed, or installed by the pre-2.0 CLI, which had no consent to
- * record — without it the v2 gateway refuses ready and crash-loops).
- * Best-effort by design: a registry hiccup must not fail a fleet rollout, and
- * the next apply retries. Returns the packages newly installed (the caller
- * restarts to load them).
- *
- * Consent state lives inside the tenant's SQLite, so a marker file in each
- * project dir tracks it host-side. The marker is written only when the
- * consent-flag install succeeded — the pre-2.0 CLI rejects the flag, leaving
- * no marker, so the pass retries once the tenant actually runs 2026.8.1+.
- */
+/** Install newly requested managed plugins only. Existing installs are owner-controlled. */
 export function ensurePlugins(tenant: Tenant, packages: string[]): string[] {
   const installed: string[] = [];
 
-  const dirsByPkg = new Map<string, string[]>();
-  for (const project of pluginProjects(tenant)) {
-    dirsByPkg.set(project.pkg, [...(dirsByPkg.get(project.pkg) ?? []), project.dir]);
-  }
-  for (const [pkg, dirs] of dirsByPkg) {
-    // The owner controls consent and upgrades for plugins they installed.
-    // Provisioning may manage only the packages explicitly declared by its
-    // enabled capabilities, never every plugin found on the owner's disk.
-    if (!packages.includes(pkg)) continue;
-    if (dirs.some((d) => existsSync(path.join(d, CONSENT_MARKER)))) continue;
-    try {
-      try {
-        pluginCommand(tenant, ['install', pkg, '--accept-capabilities']);
-      } catch (err) {
-        const text = errText(err);
-        if (/unknown option|unknown argument/i.test(text)) continue; // pre-2.0 CLI: no consent to record yet
-        if (!/plugin already exists/i.test(text)) throw err;
-        // Tracked plugin (install refuses to overwrite): `update` re-stages
-        // the current build — upgrading a stale pre-2.0 build along the way —
-        // and records the consent.
-        pluginCommand(tenant, ['update', pkg, '--accept-capabilities']);
-      }
-      writeConsentMarkers(tenant, pkg);
-    } catch (err) {
-      console.warn(`  ${tenant.id}: could not record plugin consent for ${pkg} (${errText(err).split('\n')[0]}); retrying next apply`);
-    }
-  }
+  // Existing plugins belong to the owner, including their pinned versions and
+  // capability consent. A managed apply must never reinstall, upgrade, or grant
+  // consent merely because a known package is present without our marker.
 
   for (const pkg of packages) {
-    if (pluginInstalled(tenant, pkg)) continue; // the consent pass above covered it
+    if (pluginInstalled(tenant, pkg)) continue;
     try {
       try {
         pluginCommand(tenant, ['install', pkg, '--accept-capabilities']);

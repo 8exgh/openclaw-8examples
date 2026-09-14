@@ -7,6 +7,7 @@ import { renderTenant, renderAgentInstructions } from '../src/provisioner/render
 import { installTerminalWorkspace } from '../remote-terminal/workspace.mjs';
 import { reconcile, updateConfig } from '../owner-state/index.mjs';
 import type { Tenant } from '../src/types.js';
+import { ensurePlugins } from '../src/provisioner/docker.js';
 
 test('defaults advance while owner values, arrays, additions and deletions take precedence', () => {
   const base = { plugin: { enabled: true, timeout: 10, removed: 'old' }, list: ['a'], untouched: 1 };
@@ -72,4 +73,17 @@ test('first adoption preserves an existing configuration byte for byte, and malf
   rmSync(file); symlinkSync(outside, file);
   assert.throws(() => updateConfig(dir, 'provisioned-config', () => ({})), /symbolic link/);
   assert.equal(readFileSync(outside, 'utf8'), '{"private":"host"}');
+});
+
+test('provisioning neither upgrades nor grants consent to an existing owner-installed managed-provider package', t => {
+  const root = mkdtempSync(path.join(tmpdir(), 'owner-plugin-version-'));
+  const priorRoot = process.env.MOC_TENANTS_DIR, priorPath = process.env.PATH, priorLog = process.env.OWNER_DOCKER_TEST_LOG;
+  process.env.MOC_TENANTS_DIR = root; process.env.PATH = root + ':' + priorPath; process.env.OWNER_DOCKER_TEST_LOG = path.join(root, 'docker-called');
+  t.after(() => { for (const [key, value] of Object.entries({ MOC_TENANTS_DIR: priorRoot, PATH: priorPath, OWNER_DOCKER_TEST_LOG: priorLog })) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } rmSync(root, { recursive: true, force: true }); });
+  writeFileSync(path.join(root, 'docker'), '#!/bin/sh\nprintf called >> "$OWNER_DOCKER_TEST_LOG"\nexit 1\n', { mode: 0o755 });
+  const project = path.join(root, 'owner-test/config/npm/projects/openclaw-brave-plugin-owner'); mkdirSync(project, { recursive: true });
+  writeFileSync(path.join(project, 'package.json'), JSON.stringify({ dependencies: { '@openclaw/brave-plugin': '1.2.3' } }));
+  assert.deepEqual(ensurePlugins({ id: 'owner-test' } as Tenant, ['@openclaw/brave-plugin']), []);
+  assert.equal(existsSync(path.join(root, 'docker-called')), false);
+  assert.equal(JSON.parse(readFileSync(path.join(project, 'package.json'), 'utf8')).dependencies['@openclaw/brave-plugin'], '1.2.3');
 });

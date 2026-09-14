@@ -57,3 +57,20 @@ console.log('Owner configuration adopted and admin capabilities enabled on openc
 JS
 docker exec --user node openclaw-openclaw1 openclaw config validate --json
 docker exec --user root openclaw-openclaw1 sh -c 'test "$(id -u)" = 0 && test ! -S /var/run/docker.sock && runuser -u node -- test -r /home/node/.openclaw/openclaw.json'
+# Reload any running API service for this checkout so an already-loaded
+# provisioner cannot keep using the previous overwrite behavior. Match the CLI
+# serve command exactly; tenant gateways and other services are not selected.
+node --input-type=module - <<'JS'
+import { execFileSync } from 'node:child_process';
+const systemctl = args => execFileSync('systemctl', args, { encoding: 'utf8', timeout: 60000 });
+const units = JSON.parse(systemctl(['list-units', '--type=service', '--state=running', '--output=json']));
+let count = 0;
+for (const { unit } of units) {
+  const detail = systemctl(['show', unit, '--property=WorkingDirectory,ExecStart']);
+  if (!detail.includes(process.env.MOC_ROOT)) continue;
+  if (!/(?:src\/cli\.ts|dist\/cli\.js|npm[^\n]*run)\s+serve\b/.test(detail)) continue;
+  systemctl(['try-restart', unit]); count++;
+  console.log(`Refreshed the control-plane API service: ${unit}`);
+}
+console.log(`Control-plane API services refreshed: ${count}. Tenant gateways were not selected.`);
+JS
