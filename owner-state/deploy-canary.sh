@@ -10,7 +10,13 @@ import path from 'node:path';
 const { assertOwnerIdle } = await import(`${process.env.SOURCE}/owner-state/index.mjs`);
 assertOwnerIdle(path.join(process.env.MOC_ROOT, 'tenants/openclaw1'));
 JS
-test -z "$(runuser -u openclaw -- git -C "$MOC_ROOT" status --porcelain --untracked-files=no)"
+TRACKED_CHANGES=$(runuser -u openclaw -- git -C "$MOC_ROOT" status --porcelain --untracked-files=no)
+if [ -n "$TRACKED_CHANGES" ]; then
+  echo "The live control-plane checkout has local changes; leaving it untouched:"
+  printf '%s\n' "$TRACKED_CHANGES"
+  runuser -u openclaw -- git -C "$MOC_ROOT" diff --stat
+  exit 1
+fi
 runuser -u openclaw -- git -C "$MOC_ROOT" fetch origin main
 runuser -u openclaw -- git -C "$MOC_ROOT" merge --ff-only "$REVISION"
 runuser -u openclaw -- npm --prefix "$MOC_ROOT" ci
