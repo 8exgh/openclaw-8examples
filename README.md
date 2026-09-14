@@ -176,8 +176,9 @@ needed for `tailscale set`). Expect a Pi 4-class node to top out around
 
 | Path in `tenants/<id>/` | On re-render/update |
 | --- | --- |
-| `config/openclaw.json`, `docker-compose.yml` | overwritten (managed) |
-| `workspace/AGENTS.md`, `HEARTBEAT.md`, `skills/`, `capabilities/` | overwritten (managed) |
+| `config/openclaw.json` | owner edits and deletions preserved; unchanged defaults reconciled |
+| `docker-compose.yml` | hosting configuration rendered; owner system images retained |
+| `workspace/AGENTS.md`, `HEARTBEAT.md`, `skills/`, `capabilities/` | owner edits and installed skills preserved |
 | `.env` | merged — filled values always preserved |
 | `workspace/SOUL.md` | seeded once, then the tenant's/agent's own |
 | `auth-profile-secrets/` | never touched — **back this up**; it holds the encryption key for the tenant's stored OAuth tokens, and losing it invalidates every connected credential |

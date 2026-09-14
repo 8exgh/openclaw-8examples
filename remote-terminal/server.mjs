@@ -1,11 +1,13 @@
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { createTerminalBroker } from './broker.mjs';
 import { terminalTransport } from './transport.mjs';
 
 const root = process.env.MOC_ROOT;
 if (!root) throw new Error('MOC_ROOT must point at the live managed-openclaw checkout');
 const enabled = new Set((process.env.REMOTE_TERMINAL_TENANTS || '').split(',').filter(Boolean));
+const statusWrites = new Map();
 if (!enabled.size || [...enabled].some(tenant => !/^[a-z0-9][a-z0-9-]{0,63}$/.test(tenant))) throw new Error('Explicitly enable the canary tenant');
 const server = createTerminalBroker({
   serviceToken: process.env.REMOTE_CONNECT_SERVICE_TOKEN,
@@ -19,9 +21,21 @@ const server = createTerminalBroker({
     } catch { return; }
   },
   createTransport: terminalTransport,
+  allowAdmin: tenant => enabled.has(tenant) && existsSync(path.join(root, 'tenants', tenant, '.owner-admin')),
   onStatus(tenant, status) {
-    const file = path.join(root, 'tenants', tenant, 'workspace/remote-terminal/status.json');
+    // Keep authoritative lifecycle state outside owner-writable mounts. Write
+    // the advisory workspace copy from inside that container's namespace.
+    const file = path.join(root, 'tenants', tenant, '.remote-terminal-status.json');
     writeFileSync(file + '.tmp', JSON.stringify(status) + '\n', { mode: 0o644 }); renameSync(file + '.tmp', file);
+    const queued = (statusWrites.get(tenant) || Promise.resolve()).then(() => new Promise(resolve => {
+      const writer = spawn('docker', ['exec', '-i', '--user', 'node', `openclaw-${tenant}`, 'node', '-e', "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const fs=require('fs'),p='/home/node/.openclaw/workspace/remote-terminal/status.json',t=p+'.'+require('crypto').randomUUID();fs.writeFileSync(t,s,{mode:0o600});fs.renameSync(t,p);});"], { stdio: ['pipe', 'ignore', 'ignore'] });
+      const timer = setTimeout(() => writer.kill('SIGKILL'), 5000); timer.unref();
+      writer.on('error', () => { clearTimeout(timer); resolve(); });
+      writer.on('close', () => { clearTimeout(timer); resolve(); });
+      writer.stdin.on('error', () => {}); writer.stdin.end(JSON.stringify(status) + '\n');
+    }));
+    statusWrites.set(tenant, queued);
+    void queued.finally(() => { if (statusWrites.get(tenant) === queued) statusWrites.delete(tenant); });
   },
 });
 const host = process.env.REMOTE_TERMINAL_HOST || '127.0.0.1';

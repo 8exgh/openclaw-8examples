@@ -85,3 +85,17 @@ test('a slow creation does not issue a session after tenant access is revoked', 
   f.revoke(); ready();
   assert.equal((await creation).status, 401); assert.equal(closed, true);
 });
+test('admin mode requires a redeemed owner connection, is scoped to its tenant, and closes the previous shell', async t => {
+  const f = await fixture(t, { allowAdmin: tenant => tenant === 'openclaw1' });
+  assert.equal((await f.request('/account/sessions', { tenant: 'openclaw2' })).status, 403);
+  assert.equal((await f.request('/account/sessions', { tenant: 'openclaw1' }, { Authorization: 'Bearer wrong' })).status, 401);
+  const session = (await f.request('/account/sessions', { tenant: 'openclaw1' })).body;
+  assert.equal((await f.request(`/${session.id}/shell`, { mode: 'root' })).status, 401);
+  const redeemed = await f.unlock(session), headers = { 'x-remote-viewer': redeemed.viewerToken };
+  assert.equal((await f.request(`/${session.id}/shell`, { mode: 'root', tenant: 'openclaw2' }, headers)).status, 400);
+  const switched = await f.request(`/${session.id}/shell`, { mode: 'root' }, headers);
+  assert.equal(switched.status, 200); assert.equal(switched.body.mode, 'root'); assert.equal(switched.body.lastInputSequence, 0);
+  assert.equal(f.transports[0].closed, true); assert.equal(f.transports[1].closed, false);
+  const disabled = await fixture(t), second = await disabled.create(), u = await disabled.unlock(second);
+  assert.equal((await disabled.request(`/${second.id}/shell`, { mode: 'root' }, { 'x-remote-viewer': u.viewerToken })).status, 403);
+});

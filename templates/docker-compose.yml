@@ -70,6 +70,7 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+{{OWNER_ADMIN_CAPABILITIES}}
     mem_limit: "{{MEM_LIMIT}}"
     memswap_limit: "{{MEM_LIMIT}}" # no swap escape hatch — fail fast, don't thrash the host
     cpus: "{{CPUS}}"

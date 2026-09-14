@@ -1,3 +1,5 @@
+import { assertOwnerIdle, assertSafePath, updateConfig, updateText, updateBlock, updateAgentBody } from '../../owner-state/index.mjs';
+import { ADMIN_CAPABILITIES, ownerImage } from '../../owner-state/docker.mjs';
 import { createHash, randomBytes } from 'node:crypto';
 import {
   chmodSync,
@@ -579,15 +581,19 @@ export function renderAgentInstructions(tenant: Tenant): Record<string, string> 
     UPGRADE_CAPABILITIES: sections.upgrades,
     MANAGED_VERSION: managedVersion(),
   };
-  writeFileSync(path.join(workspace, 'AGENTS.md'), template('workspace/AGENTS.md', vars) +
-    (tenant.tier === 'desktop' ? '' : '\n' + remoteInstructions()) +
-    (tenant.tier !== 'desktop' && existsSync(path.join(tenantDir(tenant.id), '.remote-terminal-key')) ? '\n' + terminalInstructions() : ''));
+  const dir = tenantDir(tenant.id);
+  updateAgentBody(dir, template('workspace/AGENTS.md', vars));
+  if (tenant.tier !== 'desktop') {
+    updateBlock(dir, 'managed-remote-connect', path.join(workspace, 'AGENTS.md'), remoteInstructions());
+    if (existsSync(path.join(dir, '.remote-terminal-key'))) updateBlock(dir, 'managed-remote-terminal', path.join(workspace, 'AGENTS.md'), terminalInstructions());
+  }
   return vars;
 }
 
 /** Install the managed client without touching the agent's phone tasks/history. */
 export function installPhoneGatewayHelper(tenant: Tenant): void {
   const dir = path.join(tenantDir(tenant.id), 'workspace', 'phone');
+  assertSafePath(path.join(dir, 'gateway.mjs'));
   if (!tenant.capabilities.phone?.enabled) {
     rmSync(path.join(dir, 'gateway.mjs'), { force: true });
     return;
@@ -599,6 +605,7 @@ export function installPhoneGatewayHelper(tenant: Tenant): void {
 function installGlassesHelper(tenant: Tenant): void {
   const dir = path.join(tenantDir(tenant.id), 'workspace', 'glasses');
   const target = path.join(dir, 'publish-summary.mjs');
+  assertSafePath(target);
   if (!tenant.capabilities.glasses?.enabled) {
     rmSync(target, { force: true });
     return;
@@ -613,11 +620,11 @@ function installGlassesHelper(tenant: Tenant): void {
  *   tenants/<id>/
  *     docker-compose.yml      managed (overwritten)
  *     .env                    merged (values preserved)
- *     config/openclaw.json    managed (overwritten)
+ *     config/openclaw.json    defaults reconciled; owner changes/deletions win
  *     workspace/
- *       AGENTS.md             managed (overwritten)
- *       HEARTBEAT.md          managed (overwritten)
- *       skills/, capabilities/  managed (rebuilt)
+ *       AGENTS.md             seeded body and named blocks; owner edits win
+ *       HEARTBEAT.md          seed/update only if unchanged
+ *       skills/, capabilities/  owner additions and edits preserved
  *       SOUL.md               seeded once, then owned by tenant/agent
  *       nudges/, memory, everything else: never touched here
  *
@@ -625,6 +632,7 @@ function installGlassesHelper(tenant: Tenant): void {
  */
 export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
   const dir = tenantDir(tenant.id);
+  assertOwnerIdle(dir);
   const workspace = path.join(dir, 'workspace');
   mkdirSync(dir, { recursive: true });
   chmodSync(dir, 0o700); // holds config, workspace, and secret material
@@ -635,7 +643,7 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
   ensureDirForContainer(path.join(dir, 'auth-profile-secrets'), 0o700);
   ensureDirForContainer(path.join(dir, 'browser-cache'));
 
-  const imageRef = tenant.pinnedImageRef ?? fleet.pinnedImageRef ?? fleet.image;
+  const imageRef = ownerImage(dir) ?? tenant.pinnedImageRef ?? fleet.pinnedImageRef ?? fleet.image;
   const res = resourcesFor(tenant);
 
   // Telegram only enables once a real bot token is in .env (from a prior render
@@ -682,39 +690,13 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
     !!tenant.modelGatewayUrl &&
     (tenant.modelAccess === 'suppressed' || (!!gatewayKey && gatewayKey !== 'changeme'));
 
-  // OpenClaw writes config provenance metadata and restores its last-known-good
-  // backup during shutdown when that metadata suddenly disappears. Preserve it
-  // across managed renders so an intentional config update is not rolled back
-  // while docker compose recreates the container. Same for `commands`:
-  // `openclaw pairing approve` writes commands.ownerAllowFrom (the operator
-  // account for owner-only commands and exec approvals) into the managed
-  // config, and a render must not silently demote the owner.
-  const PRESERVED_CONFIG_KEYS = ['meta', 'commands'] as const;
-  const configFile = path.join(dir, 'config', 'openclaw.json');
-  const preserved: Record<string, unknown> = {};
-  if (existsSync(configFile)) {
-    try {
-      const existing = JSON.parse(readFileSync(configFile, 'utf8')) as Record<string, unknown>;
-      for (const key of PRESERVED_CONFIG_KEYS) {
-        if (existing[key] !== undefined) preserved[key] = existing[key];
-      }
-    } catch {
-      /* A malformed config will be replaced by the managed render below. */
-    }
-  }
-  const renderedConfig = buildOpenclawConfig(tenant, {
+  updateConfig(dir, 'provisioned-config', () => buildOpenclawConfig(tenant, {
     channelReady,
     moonshotSearchReady,
     braveSearchReady,
     minimaxReady,
     modelGatewayUrl: modelGatewayReady ? tenant.modelGatewayUrl : undefined,
-  });
-  Object.assign(renderedConfig, preserved);
-
-  writeFileSync(
-    configFile,
-    JSON.stringify(renderedConfig, null, 2) + '\n',
-  );
+  }), { adoptExisting: true });
 
   // Each opted-in claw joins its OWN private, internal network (mgw-<tenant>)
   // that carries only claw↔gateway traffic — NOT one flat bridge shared by
@@ -735,6 +717,7 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
       MEM_LIMIT: asDockerMem(res.memoryGb),
       CPUS: String(res.cpus),
       PIDS_LIMIT: String(res.pidsLimit),
+      OWNER_ADMIN_CAPABILITIES: existsSync(path.join(dir, '.owner-admin')) ? `    cap_add:\n${ADMIN_CAPABILITIES.map(cap => `      - ${cap}`).join('\n')}` : '',
       MODEL_GATEWAY_NETWORKS_SERVICE: joinGatewayNetwork
         ? '    networks:\n      - default\n      - model-gateway'
         : '',
@@ -747,33 +730,29 @@ export function renderTenant(tenant: Tenant, fleet: Fleet): string[] {
   const vars = renderAgentInstructions(tenant);
   installPhoneGatewayHelper(tenant);
   installGlassesHelper(tenant);
-  writeFileSync(path.join(workspace, 'HEARTBEAT.md'), template('workspace/HEARTBEAT.md', vars));
+  updateText(dir, 'heartbeat', path.join(workspace, 'HEARTBEAT.md'), template('workspace/HEARTBEAT.md', vars));
 
   const soul = path.join(workspace, 'SOUL.md');
   if (!existsSync(soul)) writeFileSync(soul, template('workspace/SOUL.md', vars));
 
-  // skills/ and capabilities/ are fully managed — rebuild from scratch.
+  // Seed/update our unchanged defaults; owner skills and edits are retained.
   const skillsDir = path.join(workspace, 'skills');
-  rmSync(skillsDir, { recursive: true, force: true });
   const offloadDir = path.join(skillsDir, 'offload-radar');
   mkdirSync(offloadDir, { recursive: true });
-  writeFileSync(
+  updateText(dir, 'skill-offload-radar',
     path.join(offloadDir, 'SKILL.md'),
     template('workspace/skills/offload-radar/SKILL.md', vars),
   );
 
   const capsDir = path.join(workspace, 'capabilities');
-  rmSync(capsDir, { recursive: true, force: true });
   mkdirSync(capsDir, { recursive: true });
-  for (const [id, state] of Object.entries(tenant.capabilities)) {
-    if (!state?.enabled) continue;
-    const def = capability(id as CapabilityId);
-    writeFileSync(path.join(capsDir, `${id}.md`), def.workspaceDoc);
+  for (const def of CAPABILITIES) {
+    updateText(dir, `capability-${def.id}`, path.join(capsDir, `${def.id}.md`), tenant.capabilities[def.id]?.enabled ? def.workspaceDoc : null);
   }
   // Always on: every claw can be reached from, and can ask after, its owner's
   // iPhone (the "My Claw" app, backend at 8examples.com/api/mobile). It only
   // needs the telemetry token the tenant already has.
-  writeFileSync(path.join(capsDir, 'iphone.md'), template('workspace/capabilities/iphone.md', vars));
+  updateText(dir, 'capability-iphone', path.join(capsDir, 'iphone.md'), template('workspace/capabilities/iphone.md', vars));
 
   const nudgesDir = path.join(workspace, 'nudges');
   mkdirSync(nudgesDir, { recursive: true });

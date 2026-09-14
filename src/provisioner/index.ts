@@ -4,6 +4,7 @@ import { tenantDir } from '../store.js';
 import type { Fleet, Tenant, Tier } from '../types.js';
 import { composeDown, composeUp, containerStatus, dockerAvailable } from './docker.js';
 import { renderTenant } from './render.js';
+import { checkpointOwnerImage } from '../../owner-state/docker.mjs';
 
 /**
  * Plugins the image does not bundle. Enabling one in config without
@@ -54,6 +55,7 @@ export interface Provisioner {
 
 const containerProvisioner: Provisioner = {
   apply(tenant, fleet, { start }) {
+    if (start && dockerAvailable()) checkpointOwnerImage(tenantDir(tenant.id), tenant.id);
     const missingEnv = renderTenant(tenant, fleet);
     let started = false;
     if (start && dockerAvailable()) {

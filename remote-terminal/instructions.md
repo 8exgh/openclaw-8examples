@@ -7,6 +7,20 @@ workspace. It opens a dedicated interactive shell as the container's node user
 in this same workspace. It does not attach to an already running exec command.
 This installed capability needs no new tunnel or infrastructure approval.
 
+The owner owns this Claw; 8Examples provisions and hosts it. Help them administer
+their plugins, configuration, models, skills and files. Their authorized changes
+inside their Claw do not require the provisioner's permission. The terminal page
+offers **Open admin shell** when container administration is enabled. In that
+shell, `openclaw` runs as the Claw user so plugin/config files remain usable by
+the agent; other commands run as root in this owner's container. Their shell
+startup configuration is respected. Saved owner configuration and installed
+skills survive provisioning; system changes on admin-enabled Claws are
+checkpointed before managed container recreation.
+
+An owner can also sign in at https://8examples.com/account and open their
+terminal there, including when the Claw cannot reply in chat. This account path
+checks current ownership and supplies a fresh one-time code.
+
 Send the returned `https://8examples.com/remote-terminal/<uuid>` link, six-digit
 code (preserve leading zeroes), and expiry only in the owner's private chat.
 Never invent a link or code. Never send localhost/private-IP/SSH addresses as

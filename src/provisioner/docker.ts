@@ -109,6 +109,10 @@ export function ensurePlugins(tenant: Tenant, packages: string[]): string[] {
     dirsByPkg.set(project.pkg, [...(dirsByPkg.get(project.pkg) ?? []), project.dir]);
   }
   for (const [pkg, dirs] of dirsByPkg) {
+    // The owner controls consent and upgrades for plugins they installed.
+    // Provisioning may manage only the packages explicitly declared by its
+    // enabled capabilities, never every plugin found on the owner's disk.
+    if (!packages.includes(pkg)) continue;
     if (dirs.some((d) => existsSync(path.join(d, CONSENT_MARKER)))) continue;
     try {
       try {

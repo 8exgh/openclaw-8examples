@@ -11,7 +11,8 @@ docker exec --user node --workdir /home/node/.openclaw/workspace "openclaw-$CANA
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REVISION=$(git -C "$HERE" rev-parse HEAD)
 DEST="/opt/openclaw-remote-terminal/$REVISION"
-install -d -m 0755 "$DEST/remote-terminal/plugin"
+install -d -m 0755 "$DEST/remote-terminal/plugin" "$DEST/owner-state"
+install -m 0644 "$HERE/../owner-state/"*.mjs "$DEST/owner-state/"
 install -m 0644 "$HERE"/*.mjs "$HERE"/*.py "$HERE"/instructions.md "$DEST/remote-terminal/"
 install -m 0644 "$HERE"/plugin/* "$DEST/remote-terminal/plugin/"
 install -d -m 0700 /etc/openclaw

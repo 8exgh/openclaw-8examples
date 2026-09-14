@@ -21,10 +21,17 @@ if pid == 0:
     env = dict(os.environ, TERM="xterm-256color", COLORTERM="truecolor",
                HISTFILE="/dev/null", HISTSIZE="0", HISTFILESIZE="0",
                PS1=r"\u@\h:\w\$ ")
-    # A dedicated shell: do not run startup hooks that might record input.
+    # Respect the owner's interactive shell configuration. We do not enable
+    # history or recording; any logging in their .bashrc remains their choice.
     env.pop("PROMPT_COMMAND", None)
     env.pop("BASH_ENV", None)
-    os.execve("/bin/bash", ["bash", "--noprofile", "--norc", "-i"], env)
+    if os.getuid() == 0:
+        # Keep OpenClaw's plugin/config writes owned by its runtime user even
+        # when the human uses root for apt, system files, or process recovery.
+        env["BASH_FUNC_openclaw%%"] = '() { runuser -u node -- openclaw "$@"; }'
+        env["OPENCLAW_STATE_DIR"] = "/home/node/.openclaw"
+        env["OPENCLAW_CONFIG_PATH"] = "/home/node/.openclaw/openclaw.json"
+    os.execve("/bin/bash", ["bash", "-i"], env)
 
 fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
 os.set_blocking(master, False)

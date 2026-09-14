@@ -2,9 +2,10 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('./pty-bridge.py', import.meta.url), 'utf8');
-export function terminalTransport(tenant) {
+export function terminalTransport(tenant, mode = 'node') {
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(tenant)) throw new Error('Invalid tenant');
-  return stdioTerminal(spawn('docker', ['exec', '-i', '--user', 'node', '--workdir', '/home/node/.openclaw/workspace',
+  if (!['node', 'root'].includes(mode)) throw new Error('Invalid shell mode');
+  return stdioTerminal(spawn('docker', ['exec', '-i', '--user', mode, '--env', `HOME=${mode === 'root' ? '/root' : '/home/node'}`, '--workdir', '/home/node/.openclaw/workspace',
     `openclaw-${tenant}`, 'python3', '-u', '-c', source], { stdio: ['pipe', 'pipe', 'ignore'] }));
 }
 

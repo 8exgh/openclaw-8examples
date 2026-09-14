@@ -18,7 +18,8 @@ continuing. Ending a terminal does not establish that a command/login succeeded.
 - `transport.mjs` and `pty-bridge.py`: Docker exec stdio into a fixed container;
   Python's standard-library PTY, terminal resize, UTF-8 bytes and control keys.
   No published SSH, WebSocket, Docker, or shell port. Host/container names,
-  startup command, user, and working directory cannot be supplied by the viewer.
+  startup command and working directory are fixed. The owner can choose the
+  Claw user or the enabled administrator shell for that same container.
 - Website `/remote-terminal/[id]`: xterm.js with fit-to-window, physical/mobile
   keyboard, paste, composition, and touch controls for Tab/Esc/arrows/Ctrl+C.
 - Website `/api/remote-terminal/[...path]`: HTTPS same-origin proxy, distinct
@@ -59,15 +60,34 @@ Installing the native plugin allows openclaw1's gateway to reload when idle.
   resets and says so. This is not a durable terminal transcript.
 - Terminal pages and API requests are excluded from site analytics, request logs
   and session recording, with no-store/no-referrer headers. The feature does not
-  write typed input or output to disk. Bash starts without startup files and with
-  history disabled. Commands can still write files, and CLI applications can have
+  write typed input or output to disk. Bash reads the owner's interactive startup
+  file and defaults history to /dev/null; owner startup settings take precedence. Commands can still write files, and CLI applications can have
   their own logging. The remote host and proxy handle input/output and are trusted.
 
 This is full shell access under the Claw's existing container permissions. It can
 change that Claw's files, accounts and processes. The agent is instructed to pause
 the related task and not inspect the terminal; this is not a process-level lock
 against every agent tool. The privileged host broker can invoke Docker and must
-remain private. No root shell is supplied to the owner.
+remain private. The enabled admin shell runs as root inside the owner’s container,
+with a bounded set of Linux capabilities. The host Docker socket is not mounted.
+
+## Owner control and recovery
+
+The owner can use **Open admin shell** for system administration, or **New Claw
+shell** for ordinary work. Both open a new shell and close the previous one. The
+`openclaw` function in the root shell uses `runuser -u node`, preserving the file
+ownership required by the running agent. Other commands, including package
+installation, run as container root. Normal `.bashrc` configuration is loaded.
+
+The signed-in owner can also create a connection at
+`/remote-terminal/owner/<tenant>` from their account page. The website checks the
+current assignment, account cookie, and Origin before calling the private broker;
+a historical assignment or an administrator account alone does not confer access.
+This does not depend on the Claw replying in chat. The container must be running;
+a container that cannot start at all still requires hosting recovery.
+
+See [owner-state/README.md](../owner-state/README.md) for configuration preservation,
+owner backups, system-image checkpoints and the canary rollout.
 
 ## Verify and deploy
 

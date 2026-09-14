@@ -46,6 +46,21 @@ try {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
   assert(verified, 'Real PTY input/output through public HTTPS');
+  if ((await (await fetch(api + '/state', { headers })).json()).adminAvailable) {
+    const switched = await fetch(api + '/shell', { method: 'POST', headers, body: JSON.stringify({ mode: 'root' }) });
+    assert.equal(switched.status, 200); assert.equal((await switched.json()).mode, 'root');
+    const adminMarker = 'ADMIN_OK_' + randomUUID().replaceAll('-', '');
+    const command = `test ! -S /var/run/docker.sock && t=$(mktemp) && chown node "$t" && rm "$t" && printf '${adminMarker}:%s:%s\\n' "$(id -un)" "$(runuser -u node -- id -un)"\r`;
+    assert.equal((await fetch(api + '/input', { method: 'POST', headers, body: JSON.stringify({ sequence: 1, data: Buffer.from(command).toString('base64') }) })).status, 200);
+    let adminVerified = false;
+    for (let n = 0; n < 30; n++) {
+      const output = (await (await fetch(api + '/output', { headers })).json()).chunks.map(c => Buffer.from(c.data, 'base64').toString()).join('');
+      if (output.includes(`${adminMarker}:root:node`)) { adminVerified = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    assert(adminVerified, 'Owner has working root permissions inside their own container');
+    console.log('PASS: public admin shell has real root permissions, can switch to the Claw user, and has no host Docker socket.');
+  }
   const ended = await fetch(api + '/complete', { method: 'POST', headers, body: '{}' }); assert.equal(ended.status, 200);
   assert.equal((await helper('status')).status, 'completed');
   console.log('PASS: public terminal page, one-time code, protected cookie, CSRF, real node-user PTY input/output, and terminal cleanup.');

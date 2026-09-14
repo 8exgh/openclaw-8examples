@@ -15,11 +15,11 @@ async function body(req) {
 }
 
 export function createTerminalBroker({ serviceToken, tenantCredential, createTransport, publicOrigin = 'https://8examples.com',
-  now = Date.now, ttlMs = 15 * 60_000, idleMs = 3 * 60_000, onStatus = () => {} }) {
+  now = Date.now, ttlMs = 15 * 60_000, idleMs = 3 * 60_000, onStatus = () => {}, allowAdmin = () => false }) {
   if (!serviceToken || serviceToken.length < 32) throw new Error('A service credential of at least 32 characters is required');
   const sessions = new Map(), creating = new Set(), rates = new Map();
   const active = s => s.status === 'waiting' || s.status === 'connected';
-  const state = s => ({ id: s.id, tenant: s.tenant, status: s.status, expiresAt: new Date(s.expires).toISOString(), lastInputSequence: s.lastInput });
+  const state = s => ({ id: s.id, tenant: s.tenant, status: s.status, mode: s.mode, adminAvailable: allowAdmin(s.tenant), expiresAt: new Date(s.expires).toISOString(), lastInputSequence: s.lastInput });
   const status = s => { try { onStatus(s.tenant, state(s)); } catch { /* advisory status only */ } };
   function end(s, reason) {
     if (!active(s)) return;
@@ -46,9 +46,12 @@ export function createTerminalBroker({ serviceToken, tenantCredential, createTra
     const url = new URL(req.url, 'http://broker'), path = url.pathname;
     if (req.method === 'GET' && path === '/health') return { ok: true };
     sweep();
-    if (req.method === 'POST' && path === '/sessions') {
+    if (req.method === 'POST' && ['/sessions', '/account/sessions'].includes(path)) {
       const data = await body(req), tenant = data.tenant;
-      const ownerKey = owner(req, tenant);
+      // /account/sessions is called only by the authenticated website backend
+      // after it verifies the signed-in account's current ownership.
+      const ownerKey = path === '/account/sessions' && typeof tenant === 'string' && tenantPattern.test(tenant) ? tenantCredential(tenant) : owner(req, tenant);
+      if (!ownerKey) reject(403, 'Terminal access is not enabled for this Claw.');
       if (Object.keys(data).some(key => key !== 'tenant')) reject(400, 'A terminal opens only the Claw’s default workspace shell.');
       if (creating.has(tenant)) reject(409, 'A terminal is already being prepared.');
       if ([...sessions.values()].filter(active).length + creating.size >= 100) reject(503, 'Terminal connections are busy.');
@@ -61,7 +64,7 @@ export function createTerminalBroker({ serviceToken, tenantCredential, createTra
         if (!equal(ownerKey, tenantCredential(tenant))) reject(401, 'Terminal access changed while connecting.');
         for (const s of sessions.values()) if (s.tenant === tenant) end(s, 'replaced');
         const id = randomUUID(), code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-        const s = { id, tenant, ownerKey, transport, codeHash: hash(id + code), attempts: 0, status: 'waiting',
+        const s = { id, tenant, ownerKey, transport, mode: 'node', codeHash: hash(id + code), attempts: 0, status: 'waiting',
           expires: now() + ttlMs, lastSeen: now(), lastInput: 0, inputTail: Promise.resolve() };
         sessions.set(id, s); status(s);
         return { ...state(s), url: `${publicOrigin}/remote-terminal/${id}`, code };
@@ -75,7 +78,7 @@ export function createTerminalBroker({ serviceToken, tenantCredential, createTra
       if (req.method === 'DELETE') end(s, 'revoked');
       return state(s);
     }
-    const match = path.match(new RegExp(`^/(${uuid})/(unlock|state|output|input|resize|complete)$`));
+    const match = path.match(new RegExp(`^/(${uuid})/(unlock|state|output|input|resize|complete|shell)$`));
     if (!match) reject(404, 'Connection not found');
     const [, id, action] = match, s = sessions.get(id);
     const method = ['state', 'output'].includes(action) ? 'GET' : 'POST';
@@ -105,6 +108,23 @@ export function createTerminalBroker({ serviceToken, tenantCredential, createTra
     }
     const data = await body(req);
     sweep(); assigned(s); if (s.status !== 'connected') reject(410, 'This terminal connection has ended.');
+    if (action === 'shell') {
+      if (!['node', 'root'].includes(data.mode) || Object.keys(data).some(key => key !== 'mode')) reject(400, 'Choose Claw user or administrator.');
+      if (data.mode === 'root' && !allowAdmin(s.tenant)) reject(403, 'Administrator access is not enabled for this Claw.');
+      if (s.changing) reject(409, 'A shell is already being opened.');
+      s.changing = true;
+      let next;
+      try {
+        await s.inputTail;
+        next = createTransport(s.tenant, data.mode); await next.ready;
+        sweep(); assigned(s);
+        if (s.status !== 'connected') reject(410, 'This terminal connection has ended.');
+        s.transport.close(); s.transport = next; next = undefined;
+        s.mode = data.mode; s.lastInput = 0; status(s);
+        return state(s);
+      } finally { next?.close(); s.changing = false; }
+    }
+    if (s.changing) reject(409, 'A shell is being opened.');
     if (action === 'resize') {
       if (!Number.isInteger(data.cols) || data.cols < 2 || data.cols > 500 || !Number.isInteger(data.rows) || data.rows < 2 || data.rows > 200) reject(400, 'Invalid terminal size');
       await s.transport.request('resize', { cols: data.cols, rows: data.rows }); return { ok: true };
