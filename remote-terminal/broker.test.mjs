@@ -96,6 +96,10 @@ test('admin mode requires a redeemed owner connection, is scoped to its tenant, 
   const switched = await f.request(`/${session.id}/shell`, { mode: 'root' }, headers);
   assert.equal(switched.status, 200); assert.equal(switched.body.mode, 'root'); assert.equal(switched.body.lastInputSequence, 0);
   assert.equal(f.transports[0].closed, true); assert.equal(f.transports[1].closed, false);
+  const delayed = { sequence: 1, data: Buffer.from('old command\r').toString('base64') };
+  assert.equal((await f.request(`/${session.id}/input`, delayed, headers)).status, 409);
+  assert.equal(f.transports[1].calls.length, 0);
+  assert.equal((await f.request(`/${session.id}/input`, { ...delayed, shellGeneration: switched.body.shellGeneration }, headers)).status, 200);
   const disabled = await fixture(t), second = await disabled.create(), u = await disabled.unlock(second);
   assert.equal((await disabled.request(`/${second.id}/shell`, { mode: 'root' }, { 'x-remote-viewer': u.viewerToken })).status, 403);
 });

@@ -23,6 +23,10 @@ export function installRemoteRuntime(dir) {
   const pluginDir = path.join(dir, 'config', relative);
   assertSafePath(pluginDir);
   mkdirSync(pluginDir, { recursive: true });
+  for (const directory of [path.join(dir, 'config/managed-plugins'), path.dirname(pluginDir), pluginDir]) {
+    chmodSync(directory, 0o755);
+    if (process.getuid?.() === 0) chownSync(directory, 1000, 1000);
+  }
   for (const name of names) {
     const file = path.join(pluginDir, name);
     assertSafePath(file);

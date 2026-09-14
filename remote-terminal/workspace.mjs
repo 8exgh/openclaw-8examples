@@ -29,7 +29,10 @@ export function installTerminalWorkspace(dir, tenant, origin = 'https://8example
   const pluginDir = path.join(dir, 'config', relative); assertSafePath(pluginDir); mkdirSync(pluginDir, { recursive: true });
   // Deployment protects credentials with umask 077. Every code directory must
   // still be traversable by the gateway user, including mkdir's parent paths.
-  for (const directory of [path.join(dir, 'config/managed-plugins'), path.dirname(pluginDir), pluginDir]) chmodSync(directory, 0o755);
+  for (const directory of [path.join(dir, 'config/managed-plugins'), path.dirname(pluginDir), pluginDir]) {
+    chmodSync(directory, 0o755);
+    if (process.getuid?.() === 0) chownSync(directory, 1000, 1000);
+  }
   for (const name of names) {
     const file = path.join(pluginDir, name);
     assertSafePath(file);

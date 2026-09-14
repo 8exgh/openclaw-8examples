@@ -48,10 +48,10 @@ try {
   assert(verified, 'Real PTY input/output through public HTTPS');
   if ((await (await fetch(api + '/state', { headers })).json()).adminAvailable) {
     const switched = await fetch(api + '/shell', { method: 'POST', headers, body: JSON.stringify({ mode: 'root' }) });
-    assert.equal(switched.status, 200); assert.equal((await switched.json()).mode, 'root');
+    assert.equal(switched.status, 200); const adminState = await switched.json(); assert.equal(adminState.mode, 'root');
     const adminMarker = 'ADMIN_OK_' + randomUUID().replaceAll('-', '');
     const command = `test ! -S /var/run/docker.sock && t=$(mktemp) && chown node "$t" && rm "$t" && printf '${adminMarker}:%s:%s\\n' "$(id -un)" "$(runuser -u node -- id -un)"\r`;
-    assert.equal((await fetch(api + '/input', { method: 'POST', headers, body: JSON.stringify({ sequence: 1, data: Buffer.from(command).toString('base64') }) })).status, 200);
+    assert.equal((await fetch(api + '/input', { method: 'POST', headers, body: JSON.stringify({ shellGeneration: adminState.shellGeneration, sequence: 1, data: Buffer.from(command).toString('base64') }) })).status, 200);
     let adminVerified = false;
     for (let n = 0; n < 30; n++) {
       const output = (await (await fetch(api + '/output', { headers })).json()).chunks.map(c => Buffer.from(c.data, 'base64').toString()).join('');

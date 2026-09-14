@@ -19,7 +19,7 @@ export function createTerminalBroker({ serviceToken, tenantCredential, createTra
   if (!serviceToken || serviceToken.length < 32) throw new Error('A service credential of at least 32 characters is required');
   const sessions = new Map(), creating = new Set(), rates = new Map();
   const active = s => s.status === 'waiting' || s.status === 'connected';
-  const state = s => ({ id: s.id, tenant: s.tenant, status: s.status, mode: s.mode, adminAvailable: allowAdmin(s.tenant), expiresAt: new Date(s.expires).toISOString(), lastInputSequence: s.lastInput });
+  const state = s => ({ id: s.id, tenant: s.tenant, status: s.status, mode: s.mode, shellGeneration: s.shellGeneration, adminAvailable: allowAdmin(s.tenant), expiresAt: new Date(s.expires).toISOString(), lastInputSequence: s.lastInput });
   const status = s => { try { onStatus(s.tenant, state(s)); } catch { /* advisory status only */ } };
   function end(s, reason) {
     if (!active(s)) return;
@@ -64,7 +64,7 @@ export function createTerminalBroker({ serviceToken, tenantCredential, createTra
         if (!equal(ownerKey, tenantCredential(tenant))) reject(401, 'Terminal access changed while connecting.');
         for (const s of sessions.values()) if (s.tenant === tenant) end(s, 'replaced');
         const id = randomUUID(), code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-        const s = { id, tenant, ownerKey, transport, mode: 'node', codeHash: hash(id + code), attempts: 0, status: 'waiting',
+        const s = { id, tenant, ownerKey, transport, mode: 'node', shellGeneration: 0, codeHash: hash(id + code), attempts: 0, status: 'waiting',
           expires: now() + ttlMs, lastSeen: now(), lastInput: 0, inputTail: Promise.resolve() };
         sessions.set(id, s); status(s);
         return { ...state(s), url: `${publicOrigin}/remote-terminal/${id}`, code };
@@ -120,11 +120,14 @@ export function createTerminalBroker({ serviceToken, tenantCredential, createTra
         sweep(); assigned(s);
         if (s.status !== 'connected') reject(410, 'This terminal connection has ended.');
         s.transport.close(); s.transport = next; next = undefined;
-        s.mode = data.mode; s.lastInput = 0; status(s);
+        s.mode = data.mode; s.lastInput = 0; s.shellGeneration++; status(s);
         return state(s);
       } finally { next?.close(); s.changing = false; }
     }
     if (s.changing) reject(409, 'A shell is being opened.');
+    // Old tabs or delayed requests must never type into a replacement shell,
+    // especially when it runs as root. Legacy clients work only in shell zero.
+    if ((data.shellGeneration ?? 0) !== s.shellGeneration) reject(409, 'The shell changed. Reload this terminal before typing.');
     if (action === 'resize') {
       if (!Number.isInteger(data.cols) || data.cols < 2 || data.cols > 500 || !Number.isInteger(data.rows) || data.rows < 2 || data.rows > 200) reject(400, 'Invalid terminal size');
       await s.transport.request('resize', { cols: data.cols, rows: data.rows }); return { ok: true };

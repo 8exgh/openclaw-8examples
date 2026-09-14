@@ -49,6 +49,10 @@ export function installPhoneHandoff(dir, tenant) {
   // Stage the feature even for phone Claws whose owner has not paired chat yet.
   if (tenant.capabilities?.phone?.enabled && !tenant.offboardedAt) {
     const target = path.join(dir, 'config', relative); assertSafePath(target); mkdirSync(target, { recursive: true });
+    for (const directory of [path.join(dir, 'config/managed-plugins'), path.dirname(target), target]) {
+      chmodSync(directory, 0o755);
+      if (process.getuid?.() === 0) chownSync(directory, 1000, 1000);
+    }
     for (const [name, body] of contents()) {
       const dest = path.join(target, name); assertSafePath(dest); writeFileSync(dest, body); chmodSync(dest, 0o644);
       if (process.getuid?.() === 0) chownSync(dest, 1000, 1000);

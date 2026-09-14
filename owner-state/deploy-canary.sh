@@ -27,6 +27,18 @@ if [ -n "$TRACKED_CHANGES" ]; then
   runuser -u openclaw -- git -C "$MOC_ROOT" diff HEAD --binary | cmp -s "$PATCH_FILE" -
 fi
 runuser -u openclaw -- npm --prefix "$MOC_ROOT" ci
+# Older installers left their plugin parent directories owned by root. Give
+# the Claw user control of those known provisioner-created directories only.
+node --input-type=module - <<'JS'
+import { existsSync, chownSync, chmodSync } from 'node:fs';
+import path from 'node:path';
+const { assertSafePath } = await import(`${process.env.MOC_ROOT}/owner-state/index.mjs`);
+for (const relative of ['config/managed-plugins', 'config/managed-plugins/managed-remote-terminal', 'config/managed-plugins/managed-remote-login', 'config/managed-plugins/managed-phone-handoff']) {
+  const directory = path.join(process.env.MOC_ROOT, 'tenants/openclaw1', relative);
+  assertSafePath(directory);
+  if (existsSync(directory)) { chownSync(directory, 1000, 1000); chmodSync(directory, 0o755); }
+}
+JS
 # This updates the provisioner for subsequent operations without starting a
 # fleet rollout. Only the following explicit canary apply touches a container.
 runuser -u openclaw -- node --import "$MOC_ROOT/node_modules/tsx/dist/loader.mjs" --input-type=module - <<'JS'
