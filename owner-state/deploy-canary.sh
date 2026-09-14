@@ -12,13 +12,20 @@ assertOwnerIdle(path.join(process.env.MOC_ROOT, 'tenants/openclaw1'));
 JS
 TRACKED_CHANGES=$(runuser -u openclaw -- git -C "$MOC_ROOT" status --porcelain --untracked-files=no)
 if [ -n "$TRACKED_CHANGES" ]; then
-  echo "The live control-plane checkout has local changes; leaving it untouched:"
+  echo "Preserving existing local control-plane changes across the fast-forward:"
   printf '%s\n' "$TRACKED_CHANGES"
-  runuser -u openclaw -- git -C "$MOC_ROOT" diff --stat
-  exit 1
+  install -d -m 0700 -o openclaw -g openclaw /home/openclaw/openclaw-backups
+  PATCH_FILE=$(mktemp /home/openclaw/openclaw-backups/owner-control-local-XXXXXX.patch)
+  runuser -u openclaw -- git -C "$MOC_ROOT" diff HEAD --binary > "$PATCH_FILE"
+  chown openclaw:openclaw "$PATCH_FILE"
 fi
 runuser -u openclaw -- git -C "$MOC_ROOT" fetch origin main
 runuser -u openclaw -- git -C "$MOC_ROOT" merge --ff-only "$REVISION"
+if [ -n "$TRACKED_CHANGES" ]; then
+  # git refuses to overwrite conflicting local edits. For non-overlapping
+  # changes, also verify that their exact diff survived the fast-forward.
+  runuser -u openclaw -- git -C "$MOC_ROOT" diff HEAD --binary | cmp -s "$PATCH_FILE" -
+fi
 runuser -u openclaw -- npm --prefix "$MOC_ROOT" ci
 # This updates the provisioner for subsequent operations without starting a
 # fleet rollout. Only the following explicit canary apply touches a container.
