@@ -61,20 +61,15 @@ installTerminalWorkspace(dir, tenant.id);
 console.log('Installed the terminal helper and runtime context for openclaw1 only.');
 JS
 docker exec --user node "openclaw-$CANARY" openclaw config validate --json
-# Recover a gateway whose earlier in-process configuration reload failed.
-# Signal only the gateway; leave the container and its browser processes alive.
+# A failed in-process reload can leave a live process with no HTTP listener.
+# It cannot handle another reload signal. Restart only this unhealthy canary.
+if ! docker exec --user node "openclaw-$CANARY" node -e "fetch('http://127.0.0.1:18789/healthz', {signal: AbortSignal.timeout(2000)}).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"; then
+  docker restart --time 20 "openclaw-$CANARY"
+fi
 docker exec -i --user node "openclaw-$CANARY" node --input-type=module - <<'JS'
-import { readdirSync, readFileSync } from 'node:fs';
 const healthy = async () => { try { return (await fetch('http://127.0.0.1:18789/healthz', { signal: AbortSignal.timeout(2000) })).ok; } catch { return false; } };
-if (!await healthy()) {
-  const gateways = readdirSync('/proc').filter(p => /^\d+$/.test(p)).filter(p => {
-    try { return readFileSync(`/proc/${p}/comm`, 'utf8').trim() === 'openclaw-gatewa'; } catch { return false; }
-  });
-  if (gateways.length !== 1) throw new Error('Expected exactly one canary gateway process');
-  process.kill(Number(gateways[0]), 'SIGUSR1');
-  for (let n = 0; n < 120 && !await healthy(); n++) await new Promise(resolve => setTimeout(resolve, 1000));
-  if (!await healthy()) throw new Error('Canary gateway did not recover after configuration repair');
-}
+for (let n = 0; n < 120 && !await healthy(); n++) await new Promise(resolve => setTimeout(resolve, 1000));
+if (!await healthy()) throw new Error('Canary gateway did not recover after configuration repair');
 console.log('Canary gateway is healthy and its installed configuration is valid.');
 JS
 systemctl daemon-reload
