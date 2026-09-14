@@ -10,6 +10,8 @@ const version = process.env.OPENCLAW_STABLE_VERSION;
 if (!root || !/^\d{4}\.\d+\.\d+(?:-\d+)?$/.test(version || '')) throw new Error('Set the live checkout and an exact stable release.');
 const dir = path.join(root, 'tenants/openclaw1'), container = 'openclaw-openclaw1';
 const apply = process.env.OPENCLAW_UPGRADE_APPLY === '1';
+// Qualified stable manifest, verified against both official registries.
+const releases = { '2026.9.4': 'sha256:cc596b846506a5f4cfcee111394a2725f375f01cca2ebb492a161fd1b747f101' };
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const backup = path.join(root, 'owner-upgrade-backups', `openclaw1-${version}-${stamp}`);
 let stage = 'inspection', stopped = false, activated = false, oldImage, oldState, oldCompose, rehearsal;
@@ -66,11 +68,14 @@ let brokerActive = false;
 try { brokerActive = run('systemctl', ['is-active', 'openclaw-remote-terminal.service']) === 'active'; } catch {}
 try {
   step('Pulling and checking the official stable application image');
-  const releaseTag = `ghcr.io/openclaw/openclaw:${version}`;
+  if (!releases[version]) throw new Error('Verify and record the official release manifest before upgrading');
+  // The official Docker Hub mirror has identical manifests. Pull by the
+  // reviewed digest so registry timing and mutable tags cannot change it.
+  const releaseTag = `openclaw/openclaw@${releases[version]}`;
   privateWrite(path.join(backup, 'pull.log'), docker(['pull', releaseTag], { timeout: 600000 }));
   const release = JSON.parse(docker(['image', 'inspect', releaseTag]))[0];
   if (release.Config.Labels?.['org.opencontainers.image.version'] !== version) throw new Error('Release image label does not match');
-  const releaseDigest = release.RepoDigests.find(d => d.startsWith('ghcr.io/openclaw/openclaw@sha256:'));
+  const releaseDigest = release.RepoDigests.find(d => d === releaseTag);
   if (!releaseDigest) throw new Error('Release image is missing its immutable registry digest');
   const metadata = JSON.parse(docker(['run', '--rm', '--network', 'none', '--entrypoint', 'node', releaseDigest, '-e', 'console.log(JSON.stringify({version:require("/app/package.json").version,node:process.version}));']));
   if (metadata.version !== version || metadata.node !== docker(['exec', container, 'node', '--version'])) throw new Error('Application-only upgrade requires the same qualified Node runtime');
@@ -130,6 +135,10 @@ try {
   console.log(`PASS: openclaw1 is healthy on ${version}; owner mounts, system filesystem and other Claws retained. Backup: ${backup}`);
 } catch (error) {
   saveFailure(error);
+  if (stage === 'Pulling and checking the official stable application image') {
+    // This stage has only public image metadata, never owner configuration.
+    console.error([error.code, error.message, error.stdout, error.stderr].filter(Boolean).join('\n').slice(-3000));
+  }
   if (activated) {
     step('Restoring the pre-upgrade application and state');
     try { docker(['stop', '--time', '15', container]); } catch {}
