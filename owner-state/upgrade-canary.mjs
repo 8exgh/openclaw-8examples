@@ -84,7 +84,7 @@ if (!apply) {
     }
     // Reproduce startup only on the retained isolated copy, capturing stderr
     // as well as stdout. No live mount, network, channel, or host port is used.
-    const copied = path.join(folder, 'rehearsal-session-only');
+    const copied = path.join(folder, 'rehearsal-native-only');
     if (existsSync(path.join(folder, 'rehearsal'))) {
       if (!existsSync(copied)) {
         mkdirSync(copied, { mode: 0o700 });
