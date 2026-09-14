@@ -1,5 +1,5 @@
 // Explicit owner-requested release upgrade. Never runs the fleet provisioner.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, chmodSync, statfsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { assertOwnerIdle, assertSafePath } from './index.mjs';
@@ -35,7 +35,8 @@ async function waitHealthy(name) {
       return;
     } catch { await new Promise(resolve => setTimeout(resolve, 1000)); }
   }
-  try { privateWrite(path.join(backup, `${name}.log`), docker(['logs', '--tail', '250', name])); } catch (error) { saveFailure(error); }
+  const logs = spawnSync('docker', ['logs', '--tail', '250', name], { encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024 });
+  privateWrite(path.join(backup, `${name}.log`), (logs.stdout || '') + (logs.stderr || ''));
   throw new Error(`${name} failed health/readiness checks`);
 }
 function validate(name) {
@@ -67,6 +68,19 @@ if (!apply) {
     for (const file of readdirSync(folder).filter(p => p === 'failure.log' || /^openclaw-upgrade-rehearsal-.*\.log$/.test(p))) {
       const lines = readFileSync(path.join(folder, file), 'utf8').split('\n').filter(line => /error|fail|invalid|requir|doctor|migration|plugin|schema|listen|readiness|timed out/i.test(line)).slice(-45);
       console.log(JSON.stringify({ diagnosticFile: file, lines: lines.map(redact) }));
+    }
+    // Reproduce startup only on the retained isolated copy, capturing stderr
+    // as well as stdout. No live mount, network, channel, or host port is used.
+    const copied = path.join(folder, 'rehearsal');
+    if (existsSync(copied)) {
+      const image = `openclaw-owner/openclaw1:stable-${version}-${latest.slice(`openclaw1-${version}-`.length).toLowerCase()}`;
+      const name = `openclaw-upgrade-diagnostic-${process.pid}`;
+      const mounts = current.Mounts.flatMap(m => ['--mount', `type=bind,src=${m.RW ? path.join(copied, path.relative(dir, m.Source)) : m.Source},dst=${m.Destination}${m.RW ? '' : ',readonly'}`]);
+      const output = spawnSync('docker', ['run', '--rm', '--name', name, '--network', 'none', '--env-file', path.join(folder, 'runtime.env'), '--env', 'OPENCLAW_SKIP_CHANNELS=1', ...mounts, image, 'node', 'openclaw.mjs', 'gateway'], { encoding: 'utf8', timeout: 20000, maxBuffer: 2 * 1024 * 1024 });
+      try { docker(['rm', '-f', name]); } catch {}
+      const raw = (output.stdout || '') + (output.stderr || '');
+      privateWrite(path.join(folder, 'isolated-diagnostic.log'), raw);
+      console.log(JSON.stringify({ isolatedStartupExit: output.status, lines: raw.split('\n').slice(-50).map(redact) }));
     }
   }
   process.exit(0);
