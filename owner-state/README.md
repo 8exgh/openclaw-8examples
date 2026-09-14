@@ -68,3 +68,18 @@ To withdraw administration, remove the tenant's `.owner-admin` marker and use
 the normal apply path to recreate without added capabilities. Retain the owner
 image, configuration, workspace, backups and ownership baselines. Stopping the
 terminal broker closes active terminals but does not delete owner data.
+
+## Explicit stable application upgrade
+
+`upgrade-canary.mjs` and the `update-openclaw1-stable.yml` devops workflow upgrade
+only openclaw1, on the owner's request. Supply a full reviewed source SHA and the
+exact npm `latest` version, then set `apply=true`. It checks the official GHCR
+image and matching Node runtime, stops the canary for a consistent full-state
+backup, and replaces `/app` in a checkpoint of the owner's existing system.
+System packages and all persistent mounts are retained. A rehearsal runs on
+copied state without network access before activation. Failure restores the old
+application and state; failed-state files and private diagnostics are retained.
+The final workflow verifies the real private-chat terminal handoff through public
+HTTPS without delivering a chat message. This is an application upgrade, not a
+replacement of the owner's OS filesystem; a different Node/base runtime requires
+a separate migration.
