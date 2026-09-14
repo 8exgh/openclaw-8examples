@@ -2,6 +2,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, chmodSync, statfsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { assertOwnerIdle, assertSafePath } from './index.mjs';
 import { checkpointOwnerImage } from './docker.mjs';
 
@@ -27,6 +28,15 @@ function composeImage(text, image) {
   const matches = [...text.matchAll(/^    image:.*$/gm)];
   if (matches.length !== 1) throw new Error('Expected exactly one canary service image');
   return text.replace(/^    image:.*$/m, `    image: "${image}"`);
+}
+function repairSchema(image, mounts, envFile, logFile) {
+  const helper = fileURLToPath(new URL('./repair-agent-schema-2026.9.4.mjs', import.meta.url));
+  const result = spawnSync('docker', ['run', '--rm', '--network', 'none', '--env-file', envFile,
+    '--env', 'OPENCLAW_UPGRADE_OFFLINE=1', '--mount', `type=bind,src=${helper},dst=/tmp/owner-upgrade-repair.mjs,readonly`,
+    ...mounts, image, 'node', '/tmp/owner-upgrade-repair.mjs'], { encoding: 'utf8', timeout: 180000, maxBuffer: 4 * 1024 * 1024 });
+  privateWrite(logFile, (result.stdout || '') + (result.stderr || ''));
+  if (result.status !== 0) throw new Error(`Native database-only repair failed; private diagnostics: ${logFile}`);
+  console.log(result.stdout.trim());
 }
 async function waitHealthy(name, logDir = backup) {
   for (let n = 0; n < 90; n++) {
@@ -93,13 +103,10 @@ if (!apply) {
         const countScript = "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/home/node/.openclaw/agents/main/agent/openclaw-agent.sqlite',{readOnly:true});const counts={};for(const table of ['session_nodes','session_windows','transcript_events'])counts[table]=db.prepare('SELECT COUNT(*) AS n FROM '+table).get().n;console.log(JSON.stringify(counts));db.close();";
         const before = JSON.parse(docker([...common, 'node', '-e', countScript]));
         const originalConfig = readFileSync(path.join(copied, 'config/openclaw.json'), 'utf8');
-        const repair = spawnSync('docker', [...common, 'openclaw', 'doctor', '--session-sqlite', 'compact', '--session-sqlite-agent', 'main', '--session-sqlite-store', '/home/node/.openclaw/agents/main/agent/openclaw-agent.sqlite', '--non-interactive', '--json'], { encoding: 'utf8', timeout: 180000, maxBuffer: 4 * 1024 * 1024 });
-        const repairLog = (repair.stdout || '') + (repair.stderr || '');
-        privateWrite(path.join(folder, 'isolated-doctor.log'), repairLog);
-        console.log(JSON.stringify({ isolatedDoctorExit: repair.status, lines: repairLog.split('\n').slice(-100).map(redact) }));
+        repairSchema(image, mounts, path.join(folder, 'runtime.env'), path.join(folder, 'isolated-schema-repair.log'));
         const after = JSON.parse(docker([...common, 'node', '-e', countScript]));
         console.log(JSON.stringify({ beforeRepair: before, afterRepair: after, countsPreserved: JSON.stringify(before) === JSON.stringify(after), configurationUnchanged: readFileSync(path.join(copied, 'config/openclaw.json'), 'utf8') === originalConfig }));
-        if (repair.status === 0) {
+        {
           const check = `openclaw-upgrade-repaired-${process.pid}`;
           try {
             docker(['run', '-d', '--name', check, '--network', 'none', '--env-file', path.join(folder, 'runtime.env'), '--env', 'OPENCLAW_SKIP_CHANNELS=1', ...mounts, image, 'node', 'openclaw.mjs', 'gateway']);
@@ -170,6 +177,8 @@ try {
     const source = mount.RW ? path.join(copied, relative) : mount.Source;
     mounts.push('--mount', `type=bind,src=${source},dst=${mount.Destination}${mount.RW ? '' : ',readonly'}`);
   }
+  step('Repairing agent database schemas on the copied state, preserving owner choices');
+  repairSchema(candidate, mounts, path.join(backup, 'runtime.env'), path.join(backup, 'rehearsal-schema-repair.log'));
   step('Rehearsing startup and migrations on copied state with networking disabled');
   rehearsal = `openclaw-upgrade-rehearsal-${process.pid}`;
   docker(['run', '-d', '--name', rehearsal, '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
@@ -186,6 +195,8 @@ try {
   run('chown', ['1000:1000', path.join(dir, '.owner-image.json')]);
   writeFileSync(path.join(dir, 'docker-compose.yml'), composeImage(oldCompose, candidate));
   activated = true;
+  const liveMounts = current.Mounts.flatMap(m => ['--mount', `type=bind,src=${m.Source},dst=${m.Destination}${m.RW ? '' : ',readonly'}`]);
+  repairSchema(candidate, liveMounts, path.join(backup, 'runtime.env'), path.join(backup, 'live-schema-repair.log'));
   privateWrite(path.join(backup, 'activation.log'), docker(['compose', 'up', '-d', '--no-deps', '--force-recreate', 'openclaw'], { cwd: dir }));
   await waitHealthy(container); validate(container);
   privateWrite(path.join(backup, 'installed-plugins.json'), docker(['exec', container, 'openclaw', 'plugins', 'list', '--json']));
