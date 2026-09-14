@@ -1,6 +1,6 @@
 // Explicit owner-requested release upgrade. Never runs the fleet provisioner.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, chmodSync, statfsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, chmodSync, statfsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { assertOwnerIdle, assertSafePath } from './index.mjs';
 import { checkpointOwnerImage } from './docker.mjs';
@@ -52,7 +52,25 @@ if (!tenant || tenant.offboardedAt || tenant.modelAccess === 'suppressed' || ten
 const current = JSON.parse(docker(['inspect', container]))[0];
 const installedVersion = docker(['exec', container, 'openclaw', '--version']);
 console.log(JSON.stringify({ tenant: tenant.id, requestedVersion: version, installedVersion, node: docker(['exec', container, 'node', '--version']), image: current.Image, running: current.State.Running, health: current.State.Health?.Status, ownerAdministration: existsSync(path.join(dir, '.owner-admin')) }));
-if (!apply) process.exit(0);
+if (!apply) {
+  const backups = path.join(root, 'owner-upgrade-backups');
+  const latest = existsSync(backups) && readdirSync(backups).filter(p => p.startsWith(`openclaw1-${version}-`)).sort().at(-1);
+  if (latest) {
+    const folder = path.join(backups, latest);
+    const secrets = new Set(current.Config.Env.map(value => value.slice(value.indexOf('=') + 1)).filter(value => value.length >= 4));
+    const collect = value => { if (!value || typeof value !== 'object') return; for (const [key, item] of Object.entries(value)) { if (/token|key|password|secret|authorization/i.test(key) && typeof item === 'string' && item.length >= 4) secrets.add(item); else collect(item); } };
+    collect(JSON.parse(readFileSync(path.join(dir, 'config/openclaw.json'), 'utf8')));
+    const redact = line => {
+      for (const secret of [...secrets].sort((a, b) => b.length - a.length)) line = line.replaceAll(secret, '[REDACTED]');
+      return line.replace(/https?:\/\/[^\s<>"']+/g, '[URL]').replace(/\b(?:sk-|pgw_)[A-Za-z0-9._-]+/g, '[REDACTED]').replace(/\b\d{5,}:[A-Za-z0-9_-]{20,}/g, '[REDACTED]');
+    };
+    for (const file of readdirSync(folder).filter(p => p === 'failure.log' || /^openclaw-upgrade-rehearsal-.*\.log$/.test(p))) {
+      const lines = readFileSync(path.join(folder, file), 'utf8').split('\n').filter(line => /error|fail|invalid|requir|doctor|migration|plugin|schema|listen|readiness|timed out/i.test(line)).slice(-45);
+      console.log(JSON.stringify({ diagnosticFile: file, lines: lines.map(redact) }));
+    }
+  }
+  process.exit(0);
+}
 if (!existsSync(path.join(dir, '.owner-admin'))) throw new Error('This upgrade requires the owner-preserving canary');
 if (installedVersion.includes(`OpenClaw ${version} `) || installedVersion === `OpenClaw ${version}`) { await waitHealthy(container); validate(container); console.log('Already running the requested stable release.'); process.exit(0); }
 const registry = await (await fetch('https://registry.npmjs.org/openclaw/latest', { signal: AbortSignal.timeout(15000) })).json();
