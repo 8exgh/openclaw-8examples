@@ -124,15 +124,48 @@ export function updateBlock(dir, name, file, desired) {
 
 // AGENTS.md predates named provisioning blocks. Adopt its existing body and
 // track it independently of the browser/phone/terminal integration blocks.
+const MANAGED_BLOCKS = /\n*<!-- managed-(?:remote-connect|remote-terminal|phone-handoff):start -->[\s\S]*?<!-- managed-(?:remote-connect|remote-terminal|phone-handoff):end -->\n?/g;
+
+/** The owner's AGENTS.md without its managed blocks; undefined when the file is absent. */
+export function agentBody(dir) {
+  const original = read(path.join(dir, 'workspace/AGENTS.md'));
+  return original === undefined ? undefined : original.replace(MANAGED_BLOCKS, '').trimEnd();
+}
+
+/** The body provisioning last seeded (the owner-edit baseline); undefined before the ledger exists. */
+export function agentBaseline(dir) {
+  const prior = read(ledger(dir, 'agent-body'));
+  return prior === undefined ? undefined : parse(prior, 'Provisioning baseline');
+}
+
+/**
+ * Establish the provisioning baseline for a workspace rendered before the
+ * ledger existed, or whose ledger is known to be wrong. The caller must have
+ * verified that `baseline` is managed text the owner never modified: the next
+ * render treats a workspace still equal to its baseline as ours to refresh.
+ */
+export function adoptAgentBody(dir, baseline) {
+  const state = ledger(dir, 'agent-body');
+  atomic(state, JSON.stringify(baseline.trimEnd()) + '\n', read(state));
+}
+
 export function updateAgentBody(dir, desired) {
   const file = path.join(dir, 'workspace/AGENTS.md'), original = read(file);
-  const pattern = /\n*<!-- managed-(?:remote-connect|remote-terminal|phone-handoff):start -->[\s\S]*?<!-- managed-(?:remote-connect|remote-terminal|phone-handoff):end -->\n?/g;
-  const blocks = original?.match(pattern) ?? [];
-  const body = original?.replace(pattern, '').trimEnd();
+  const blocks = original?.match(MANAGED_BLOCKS) ?? [];
+  const body = original?.replace(MANAGED_BLOCKS, '').trimEnd();
   const nextBody = desired.trimEnd();
   const state = ledger(dir, 'agent-body'), prior = read(state);
-  if (original === undefined && prior === undefined || prior !== undefined && body === parse(prior, 'Provisioning baseline')) {
-    atomic(file, nextBody + '\n' + blocks.join(''), original);
+  if (original !== undefined && prior === undefined) {
+    // Rendered before the ledger existed: nothing proves whether the owner
+    // edited this file, so keep it and record nothing. Recording `desired`
+    // here would freeze the file forever (disk could never equal the ledger),
+    // which is how inventory slots kept their pre-signup instructions after
+    // purchase. `adoptAgentBody` establishes the baseline once verified.
+    console.warn(`[owner-state] ${path.basename(dir)}: workspace/AGENTS.md predates the provisioning ledger and was kept as is; run "adopt-agent-body" to refresh the managed instructions.`);
+    return false;
   }
+  const refresh = original === undefined && prior === undefined || prior !== undefined && body === parse(prior, 'Provisioning baseline');
+  if (refresh) atomic(file, nextBody + '\n' + blocks.join(''), original);
   atomic(state, JSON.stringify(nextBody) + '\n', prior);
+  return refresh;
 }
