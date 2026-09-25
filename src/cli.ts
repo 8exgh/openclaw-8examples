@@ -12,7 +12,7 @@ import {
   tailscaleOnline,
   tenantTag,
 } from './egress.js';
-import { applyOpenAIAuth, applyTenant, offboardTenant, pinTenantImage, runNudge, runNudgesAll, setAgentTimeout, setCapability, setFleetModelGateway, setModelAccess, setModelGateway, signup, summarize, syncModelAccess, updateFleet, verifyModelGateway } from './ops.js';
+import { adoptAgentBaselines, applyOpenAIAuth, applyTenant, offboardTenant, pinTenantImage, runNudge, runNudgesAll, setAgentTimeout, setCapability, setFleetModelGateway, setModelAccess, setModelGateway, signup, summarize, syncModelAccess, updateFleet, verifyModelGateway } from './ops.js';
 import { managedVersion } from './provisioner/render.js';
 import { syncPhoneAccount } from './phone.js';
 import { renderSeed } from './provisioner/seed.js';
@@ -74,6 +74,13 @@ Usage: npm run cli -- <command> [args]
   enable <tenant> <capability>  Switch a capability on (re-renders + restarts)
   disable <tenant> <capability> Switch a capability off
   apply <tenant>                Re-render on current templates/config + restart
+  adopt-agent-body [tenant ...] [--dry-run] [--refresh]
+                                Establish the AGENTS.md baseline for workspaces
+                                rendered before the ownership ledger existed
+                                (only untouched inventory renders are adopted;
+                                owner-edited files are left alone). --refresh
+                                then re-renders the adopted instructions
+                                without restarting anything
   sync-phone <tenant>           Verify the existing phone number and refresh
                                 phone instructions without restarting the tenant
   pin <tenant> <image-ref>      Run one tenant on a specific OpenClaw release
@@ -201,6 +208,23 @@ async function main(): Promise<void> {
       const result = setCapability(tenantId, capabilityId, command === 'enable', { start });
       console.log(`${command}d ${capabilityId} for ${tenantId}`);
       reportApply(result);
+      break;
+    }
+    case 'adopt-agent-body': {
+      const wanted = new Set(positional);
+      const tenants = loadTenants().filter((t) => !t.offboardedAt);
+      for (const id of wanted) if (!tenants.some((t) => t.id === id)) throw new Error(`Unknown tenant: ${id}`);
+      const report = adoptAgentBaselines(tenants, {
+        only: wanted.size ? wanted : undefined,
+        dryRun: flags.has('dry-run'),
+        refresh: flags.has('refresh'),
+      });
+      console.log(
+        report.inventory
+          ? `Inventory render ${report.inventory.hash} is shared by ${report.inventory.shared} pre-ledger workspace(s)`
+          : 'No common inventory render recognised (needs 3+ untouched pre-ledger workspaces); nothing adopted',
+      );
+      for (const r of report.results) console.log(`  ${r.tenant.padEnd(16)} ${r.action}${r.detail ? ` (${r.detail})` : ''}`);
       break;
     }
     case 'apply': {

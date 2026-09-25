@@ -1,5 +1,8 @@
+import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { adoptAgentBody, agentBaseline, agentBody } from '../owner-state/index.mjs';
+import { renderAgentInstructions } from './provisioner/render.js';
 import { CAPABILITIES, capability } from './capabilities/registry.js';
 import { pickExitNode } from './egress.js';
 import { deliverToWorkspace, pickNudge } from './nudges/engine.js';
@@ -566,4 +569,68 @@ export function summarize(tenant: Tenant): TenantSummary {
     nudges: tenant.nudgeLog.length,
     offboarded: !!tenant.offboardedAt,
   };
+}
+
+export type AgentBaselineAction =
+  | 'adopted'
+  | 'refreshed'
+  | 'already-current'
+  | 'kept-owner-edited'
+  | 'kept-unrecognized'
+  | 'no-workspace';
+
+export interface AgentBaselineReport {
+  /** The inventory render most pre-ledger workspaces share, and how many share it. */
+  inventory: { hash: string; shared: number } | null;
+  results: { tenant: string; action: AgentBaselineAction; detail?: string }[];
+}
+
+/**
+ * Establish AGENTS.md provisioning baselines for workspaces rendered before the
+ * ownership ledger existed. Without a baseline the owner-edits-win rule cannot
+ * tell an untouched inventory render from an owner's edit, so it preserved the
+ * pre-signup instructions of every purchased slot forever. Only workspaces still
+ * identical to the common inventory render (modulo the tenant's own name) are
+ * adopted; anything else stays as the owner's. `only` restricts which tenants
+ * are acted on while the inventory render is still recognised fleet-wide.
+ * `refresh` re-renders the instructions of adopted or current tenants without
+ * touching their runtime.
+ */
+export function adoptAgentBaselines(
+  tenants: Tenant[],
+  opts: { only?: Iterable<string>; dryRun?: boolean; refresh?: boolean; minimumShared?: number } = {},
+): AgentBaselineReport {
+  const minimumShared = opts.minimumShared ?? 3;
+  const only = opts.only ? new Set(opts.only) : null;
+  const normalize = (tenant: Tenant, body: string): string =>
+    body.split(tenant.name).join('{{NAME}}').split(tenant.id).join('{{TENANT_ID}}');
+  const fingerprint = (text: string): string => createHash('sha256').update(text).digest('hex').slice(0, 16);
+  const scanned = tenants.map((tenant) => {
+    const dir = tenantDir(tenant.id);
+    const body = agentBody(dir);
+    return { tenant, dir, body, baseline: agentBaseline(dir), key: body === undefined ? undefined : fingerprint(normalize(tenant, body)) };
+  });
+  const tally = new Map<string, number>();
+  for (const entry of scanned) {
+    if (entry.key !== undefined && entry.baseline === undefined) tally.set(entry.key, (tally.get(entry.key) ?? 0) + 1);
+  }
+  const top = [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
+  const inventory = top && top[1] >= minimumShared ? { hash: top[0], shared: top[1] } : null;
+  const results: AgentBaselineReport['results'] = [];
+  for (const { tenant, dir, body, baseline, key } of scanned) {
+    if (only && !only.has(tenant.id)) continue;
+    if (body === undefined) { results.push({ tenant: tenant.id, action: 'no-workspace' }); continue; }
+    let action: AgentBaselineAction;
+    if (baseline !== undefined && baseline.trimEnd() === body) action = 'already-current';
+    else if (!inventory || key !== inventory.hash) action = baseline === undefined ? 'kept-unrecognized' : 'kept-owner-edited';
+    else action = 'adopted';
+    if (opts.dryRun) { results.push({ tenant: tenant.id, action, detail: 'dry run' }); continue; }
+    if (action === 'adopted') adoptAgentBody(dir, body);
+    if (opts.refresh && (action === 'adopted' || action === 'already-current')) {
+      renderAgentInstructions(tenant);
+      if (agentBody(dir) !== body) action = 'refreshed';
+    }
+    results.push({ tenant: tenant.id, action });
+  }
+  return { inventory, results };
 }
