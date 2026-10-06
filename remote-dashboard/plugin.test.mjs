@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import plugin, { requestsDashboard } from './plugin/index.mjs';
+
+test('the requested chat phrase returns the real helper result only in private chat', async t => {
+  for (const text of ['let me connect to openclaw web dashboard', 'Open your dashboard', 'Give me access to the Control UI']) assert(requestsDashboard(text), text);
+  for (const text of ['Build an OpenClaw web dashboard', 'Do not open your dashboard', 'Open a remote terminal', 'Open the sales dashboard']) assert(!requestsDashboard(text), text);
+  const workspace = mkdtempSync(path.join(tmpdir(), 'dashboard-plugin-'));
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+  mkdirSync(path.join(workspace, 'remote-dashboard'));
+  writeFileSync(path.join(workspace, 'remote-dashboard/account.json'), '{}');
+  const helper = path.join(workspace, 'remote-dashboard/session.mjs');
+  writeFileSync(helper, `if(process.argv[2]==='status')process.exit(1);console.log(JSON.stringify({url:'https://8examples.com/remote-dashboard/00000000-0000-4000-8000-000000000001',code:'000123',expiresAt:'2099-01-01T00:00:00Z'}));`);
+  const hooks = {}; plugin.register({ config: {}, on(name, fn) { hooks[name] = fn; } });
+  const event = { cleanedBody: 'let me connect to openclaw web dashboard' };
+  const ctx = { workspaceDir: workspace, sessionKey: 'agent:main:telegram:direct:123' };
+  const response = await hooks.before_agent_reply(event, ctx);
+  assert.match(response.reply.text, /remote-dashboard\/00000000/);
+  assert.match(response.reply.text, /000123/);
+  assert.match(response.reply.text, /2099-01-01/);
+  const group = await hooks.before_agent_reply(event, { ...ctx, sessionKey: 'agent:main:telegram:group:123' });
+  assert.match(group.reply.text, /private chat/);
+  assert(!group.reply.text.includes('https://'));
+  assert.equal(await hooks.before_agent_reply(event, { ...ctx, sessionKey: 'unknown' }), undefined);
+  writeFileSync(helper, `if(process.argv[2]==='create')throw new Error('must not replace');console.log(JSON.stringify({status:'connected',expiresAt:'2099-01-01T00:00:00Z'}));`);
+  assert.match((await hooks.before_agent_reply(event, ctx)).reply.text, /already connected/);
+});

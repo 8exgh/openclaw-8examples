@@ -1,0 +1,37 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, existsSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { renderTenant, renderAgentInstructions } from '../src/provisioner/render.js';
+import { installDashboardWorkspace } from '../remote-dashboard/workspace.mjs';
+import type { Tenant } from '../src/types.js';
+test('dashboard stays off until explicitly installed and survives later tenant instruction refreshes', t => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'dashboard-awareness-')), previous = process.env.MOC_TENANTS_DIR;
+  process.env.MOC_TENANTS_DIR = dir;
+  t.after(() => { if (previous === undefined) delete process.env.MOC_TENANTS_DIR; else process.env.MOC_TENANTS_DIR = previous; rmSync(dir, { recursive: true, force: true }); });
+  const tenant: Tenant = { id: 'canary-test', name: 'Canary', contact: {}, channel: 'whatsapp', gatewayPort: 29995, tier: 'container', createdAt: new Date().toISOString(), capabilities: {}, nudgeLog: [] };
+  const fleet = { releaseChannel: 'latest' as const, image: 'test/image', nextPort: 1 };
+  renderTenant(tenant, fleet);
+  const home = path.join(dir, tenant.id), keyPath = path.join(home, '.remote-dashboard-key');
+  assert(!existsSync(keyPath));
+  assert(!readFileSync(path.join(home, 'workspace/AGENTS.md'), 'utf8').includes('managed-remote-dashboard'));
+  const mask = process.umask(0o077);
+  try { installDashboardWorkspace(home, tenant.id); } finally { process.umask(mask); }
+  const installed = JSON.parse(readFileSync(path.join(home, 'config/openclaw.json'), 'utf8'));
+  const plugin = path.join(home, 'config', installed.plugins.load.paths.find((p: string) => p.includes('/managed-remote-dashboard/')).replace('/home/node/.openclaw/', ''));
+  for (const directory of [plugin, path.dirname(plugin), path.dirname(path.dirname(plugin))]) assert.equal(statSync(directory).mode & 0o777, 0o755);
+  for (const name of ['index.mjs', 'package.json', 'openclaw.plugin.json']) assert.equal(statSync(path.join(plugin, name)).mode & 0o777, 0o644);
+  const key = readFileSync(keyPath, 'utf8');
+  tenant.name = 'Dashboard Renamed Owner';
+  renderTenant(tenant, fleet); renderAgentInstructions(tenant);
+  assert.equal(readFileSync(keyPath, 'utf8'), key);
+  const agents = readFileSync(path.join(home, 'workspace/AGENTS.md'), 'utf8');
+  assert.equal(agents.match(/managed-remote-dashboard:start/g)?.length, 1);
+  assert(agents.includes('Dashboard Renamed Owner'), 'dashboard block must not freeze future managed instruction updates');
+  assert(!agents.includes(key.trim()));
+  assert.match(agents, /remote-dashboard\/session.mjs create/);
+  assert.equal(statSync(path.join(home, 'workspace/remote-dashboard/account.json')).mode & 0o777, 0o600);
+  const config = JSON.parse(readFileSync(path.join(home, 'config/openclaw.json'), 'utf8'));
+  assert.equal(config.plugins.load.paths.filter((p: string) => p.includes('/managed-remote-dashboard/')).length, 1);
+});

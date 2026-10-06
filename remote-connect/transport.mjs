@@ -6,10 +6,12 @@ const source = readFileSync(new URL('./browser-client.mjs', import.meta.url), 'u
   readFileSync(new URL('./browser-bridge.mjs', import.meta.url), 'utf8').replace("import { createBrowserClient } from './browser-client.mjs';", '');
 const interrupted = code => Object.assign(new Error('Browser connection interrupted'), { code, retryable: true });
 
-export function browserTransport(tenant) {
+export function browserTransport(tenant) { return browserStdioTransport(tenant, source); }
+
+export function browserStdioTransport(tenant, bridgeSource) {
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(tenant)) throw new Error('Invalid tenant');
   // The program comes from this trusted installation, not writable workspace.
-  const child = spawn('docker', ['exec', '-i', `openclaw-${tenant}`, 'node', '--input-type=module', '-e', source], { stdio: ['pipe', 'pipe', 'ignore'] });
+  const child = spawn('docker', ['exec', '-i', `openclaw-${tenant}`, 'node', '--input-type=module', '-e', bridgeSource], { stdio: ['pipe', 'pipe', 'ignore'] });
   let nextId = 0;
   const pending = new Map();
   let closed = false;

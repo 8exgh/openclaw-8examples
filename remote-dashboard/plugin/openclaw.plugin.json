@@ -1,0 +1,1 @@
+{"id":"managed-remote-dashboard","name":"8Examples OpenClaw dashboard","description":"Private expiring dashboard handoffs for the owner.","configSchema":{"type":"object","additionalProperties":false,"properties":{}}}

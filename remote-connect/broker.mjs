@@ -41,8 +41,9 @@ export function validateInput(data) {
 
 export function createBroker({ serviceToken, tenantCredential, createTransport, now = Date.now,
   ttlMs = 15 * 60_000, idleMs = 3 * 60_000, recoveryMs = 30_000,
-  publicOrigin = 'https://8examples.com', onStatus = () => {}, onFailure = () => {} }) {
+  publicOrigin = 'https://8examples.com', publicPath = 'remote-connect', recreateTransport = true, onStatus = () => {}, onFailure = () => {} }) {
   if (!serviceToken || serviceToken.length < 32) throw new Error('REMOTE_CONNECT_SERVICE_TOKEN must contain at least 32 characters');
+  if (!['remote-connect', 'remote-dashboard'].includes(publicPath)) throw new Error('Invalid viewer kind');
   const sessions = new Map();
   const creating = new Set();
   const creationRates = new Map();
@@ -57,6 +58,7 @@ export function createBroker({ serviceToken, tenantCredential, createTransport, 
   }
   function sweep() {
     for (const [id, s] of sessions) {
+      if (['waiting', 'connected'].includes(s.status) && !equal(s.ownerKey, tenantCredential(s.tenant))) end(s, 'revoked');
       if (['waiting', 'connected'].includes(s.status) &&
           (s.expires <= now() || (s.status === 'connected' && s.lastSeen + idleMs <= now()))) end(s, 'expired');
       if (s.expires + 60 * 60_000 < now()) sessions.delete(id);
@@ -78,6 +80,7 @@ export function createBroker({ serviceToken, tenantCredential, createTransport, 
   async function transportRequest(s, action, data) {
     if (s.transport?.closed) s.transport = undefined;
     if (!s.transport) {
+      if (!recreateTransport) { end(s, 'disconnected'); reject(410, 'This dashboard connection has ended. Ask your Claw for a new link.'); }
       if (action === 'input') throw Object.assign(new Error('Wait for the browser to reconnect'), { retryable: true, code: 'input_not_sent' });
       s.reconnecting ??= (async () => {
         const transport = createTransport(s.tenant);
@@ -108,6 +111,8 @@ export function createBroker({ serviceToken, tenantCredential, createTransport, 
       const tenant = data.tenant;
       if (typeof tenant !== 'string') reject(400, 'A tenant is required');
       owner(req, tenant);
+      const ownerKey = tenantCredential(tenant);
+      if (publicPath === 'remote-dashboard' && Object.keys(data).some(key => key !== 'tenant')) reject(400, 'A dashboard opens only this Claw’s own dashboard.');
       if (data.targetId !== undefined && (typeof data.targetId !== 'string' || !targetPattern.test(data.targetId))) reject(400, 'Invalid browser target');
       if (creating.has(tenant)) reject(409, 'A connection is already being prepared');
       const rate = creationRates.get(tenant) || { start: now(), count: 0 };
@@ -120,14 +125,15 @@ export function createBroker({ serviceToken, tenantCredential, createTransport, 
         // Prove the exact browser tab is reachable BEFORE returning a link.
         transport = createTransport(tenant);
         const selected = await transport.request('select', { targetId: data.targetId });
+        if (!equal(ownerKey, tenantCredential(tenant))) reject(401, 'Claw access changed while connecting');
         for (const s of sessions.values()) if (s.tenant === tenant && ['waiting', 'connected'].includes(s.status)) end(s, 'replaced');
         const id = randomUUID();
         const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-        const s = { id, tenant, codeHash: hash(id + code), ownerKey: tenantCredential(tenant), attempts: 0,
+        const s = { id, tenant, codeHash: hash(id + code), ownerKey, attempts: 0,
           status: 'waiting', expires: now() + ttlMs, lastSeen: now(), targetId: selected.targetId, transport };
         sessions.set(id, s);
         try { onStatus(tenant, publicState(s)); } catch { /* advisory */ }
-        return { ...publicState(s), url: `${publicOrigin}/remote-connect/${id}`, code };
+        return { ...publicState(s), url: `${publicOrigin}/${publicPath}/${id}`, code };
       } catch (error) {
         transport?.close();
         throw error;
@@ -150,6 +156,7 @@ export function createBroker({ serviceToken, tenantCredential, createTransport, 
     const action = match[2];
     if (action === 'unlock' && req.method === 'POST') {
       const data = await body(req);
+      sweep();
       if (s.status !== 'waiting') reject(410, 'This code has already been used or the connection has ended. Ask your Claw for a new link.');
       if (!equal(s.ownerKey, tenantCredential(s.tenant))) { end(s, 'revoked'); reject(410, 'This connection has ended.'); }
       if (typeof data.code !== 'string' || !/^\d{6}$/.test(data.code) || !timingSafeEqual(hash(s.id + data.code), s.codeHash)) {
@@ -209,12 +216,14 @@ export function createBroker({ serviceToken, tenantCredential, createTransport, 
     catch (error) {
       res.statusCode = error instanceof Rejected ? error.status : 503;
       // Do not log request bodies, codes, tokens, browser URLs, or subprocess errors.
-      res.end(JSON.stringify({ error: error instanceof Rejected ? error.message : 'Browser unavailable. Ask your Claw to open the login tab and create a new connection.',
+      res.end(JSON.stringify({ error: error instanceof Rejected ? error.message : publicPath === 'remote-dashboard' ? 'Dashboard unavailable. Ask your Claw to retry the dashboard connection.' : 'Browser unavailable. Ask your Claw to open the login tab and create a new connection.',
         ...(error instanceof Rejected && error.retryable ? { retryable: true } : {}) }));
     }
   });
   server.requestTimeout = 35000;
   server.headersTimeout = 10000;
-  server.on('close', () => { clearInterval(timer); for (const s of sessions.values()) end(s, 'disconnected'); });
+  const shutdown = () => { clearInterval(timer); for (const s of sessions.values()) if (['waiting', 'connected'].includes(s.status)) end(s, 'disconnected'); };
+  server.on('close', shutdown);
+  server.shutdown = () => { shutdown(); server.close(); };
   return server;
 }

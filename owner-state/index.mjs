@@ -124,7 +124,7 @@ export function updateBlock(dir, name, file, desired) {
 
 // AGENTS.md predates named provisioning blocks. Adopt its existing body and
 // track it independently of the browser/phone/terminal integration blocks.
-const MANAGED_BLOCKS = /\n*<!-- managed-(?:remote-connect|remote-terminal|phone-handoff):start -->[\s\S]*?<!-- managed-(?:remote-connect|remote-terminal|phone-handoff):end -->\n?/g;
+const MANAGED_BLOCKS = /\n*<!-- managed-(?:remote-connect|remote-terminal|remote-dashboard|phone-handoff):start -->[\s\S]*?<!-- managed-(?:remote-connect|remote-terminal|remote-dashboard|phone-handoff):end -->\n?/g;
 
 /** The owner's AGENTS.md without its managed blocks; undefined when the file is absent. */
 export function agentBody(dir) {
