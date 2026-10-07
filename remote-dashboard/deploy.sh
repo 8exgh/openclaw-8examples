@@ -12,6 +12,8 @@ REVISION="${REMOTE_DASHBOARD_REVISION:-$(date -u +%Y%m%dT%H%M%SZ)}"
 DEST="/opt/openclaw-remote-dashboard/$REVISION"
 install -d -m 0755 "$DEST/remote-dashboard/plugin" "$DEST/remote-connect" "$DEST/owner-state"
 install -m 0644 "$HERE"/remote-dashboard/*.mjs "$HERE"/remote-dashboard/instructions.md "$DEST/remote-dashboard/"
+install -m 0644 "$HERE"/remote-dashboard/package*.json "$DEST/remote-dashboard/"
+npm ci --prefix "$DEST/remote-dashboard" --omit=dev --ignore-scripts --no-audit --no-fund
 install -m 0644 "$HERE"/remote-dashboard/plugin/* "$DEST/remote-dashboard/plugin/"
 install -m 0644 "$HERE"/remote-connect/*.mjs "$DEST/remote-connect/"
 install -m 0644 "$HERE"/owner-state/*.mjs "$DEST/owner-state/"

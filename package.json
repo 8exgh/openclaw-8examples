@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "fastify": "^5.0.0",
+    "ws": "^8.21.3",
     "zod": "^3.23.0"
   },
   "devDependencies": {

@@ -9,11 +9,10 @@ gateway token, localhost URL, or the contents of `remote-dashboard/account.json`
 For a group/channel request, ask the owner to make the request in private chat.
 
 The owner enters the code on 8Examples and controls the real OpenClaw dashboard
-in a dedicated temporary browser session. The code can be used once. Access
+directly in their own browser through a temporary HTTP/WebSocket proxy. The code can be used once. Access
 expires after 15 minutes, or after three minutes without an active viewer.
 Five incorrect attempts lock the connection. **Close dashboard** ends access
-immediately; changes already saved in OpenClaw remain. This does not replace or
-share your ordinary browser login session. Opening a replacement closes the old
+immediately; changes already saved in OpenClaw remain. This does not start or use your managed remote browser. Opening a replacement closes the old
 dashboard connection, so check `node remote-dashboard/session.mjs status` first
 if you already gave the owner a link. Do not replace a connected owner unless
 they ask. Use `node remote-dashboard/session.mjs revoke` when asked to revoke it.

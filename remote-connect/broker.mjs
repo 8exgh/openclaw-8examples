@@ -51,6 +51,7 @@ export function createBroker({ serviceToken, tenantCredential, createTransport, 
   function end(s, status) {
     s.status = status;
     s.codeHash = undefined;
+    s.ticket = undefined;
     s.viewer = undefined;
     s.transport?.close();
     s.transport = undefined;
@@ -149,11 +150,21 @@ export function createBroker({ serviceToken, tenantCredential, createTransport, 
       if (req.method === 'DELETE') end(s, 'revoked');
       return publicState(s);
     }
-    const match = path.match(/^\/([^/]+)\/(unlock|state|frame|input|tab|complete)$/);
+    const match = path.match(/^\/([^/]+)\/(unlock|state|frame|input|tab|complete|handoff|enter)$/);
     if (!match || !uuid.test(match[1])) reject(404, 'Connection not found');
     const s = sessions.get(match[1]);
     if (!s) reject(410, 'This connection has ended. Ask your Claw for a new link.');
     const action = match[2];
+    // A one-use, short-lived exchange moves a dashboard viewer onto its own
+    // browser origin without putting either credential in a URL.
+    if (publicPath === 'remote-dashboard' && action === 'enter' && req.method === 'POST') {
+      const data = await body(req);
+      if (s.status !== 'connected' || !s.ticket || s.ticketExpires <= now() || !equal(data.ticket, s.ticket)) reject(401, 'Dashboard handoff expired. Open the original link again.');
+      s.ticket = undefined;
+      if (!equal(s.ownerKey, tenantCredential(s.tenant))) { end(s, 'revoked'); reject(410, 'This connection has ended.'); }
+      s.lastSeen = now();
+      return { ...publicState(s), viewerToken: s.viewer };
+    }
     if (action === 'unlock' && req.method === 'POST') {
       const data = await body(req);
       sweep();
@@ -171,6 +182,11 @@ export function createBroker({ serviceToken, tenantCredential, createTransport, 
       return { ...publicState(s), viewerToken: s.viewer };
     }
     viewer(req, s);
+    if (publicPath === 'remote-dashboard' && action === 'handoff' && req.method === 'POST') {
+      s.ticket = randomBytes(32).toString('hex');
+      s.ticketExpires = Math.min(s.expires, now() + 60000);
+      return { ticket: s.ticket };
+    }
     if (req.method === 'POST' && action === 'complete') { end(s, 'completed'); return publicState(s); }
     try {
       if (req.method === 'GET' && action === 'state') return { ...publicState(s), ...(await transportRequest(s, 'tabs')) };
@@ -222,6 +238,17 @@ export function createBroker({ serviceToken, tenantCredential, createTransport, 
   });
   server.requestTimeout = 35000;
   server.headersTimeout = 10000;
+  // Private broker extension: the native dashboard proxy shares exactly the
+  // same service, tenant, expiry and viewer checks as the OTP endpoints.
+  server.authorizeViewer = (req, id) => {
+    if (!equal(req.headers.authorization, `Bearer ${serviceToken}`)) reject(401, 'Unauthorized');
+    sweep();
+    const s = sessions.get(id);
+    if (!s) reject(410, 'This connection has ended.');
+    viewer(req, s);
+    if (!s.transport || s.transport.closed) { end(s, 'disconnected'); reject(410, 'This connection has ended.'); }
+    return { ...publicState(s), transport: s.transport };
+  };
   const shutdown = () => { clearInterval(timer); for (const s of sessions.values()) if (['waiting', 'connected'].includes(s.status)) end(s, 'disconnected'); };
   server.on('close', shutdown);
   server.shutdown = () => { shutdown(); server.close(); };
