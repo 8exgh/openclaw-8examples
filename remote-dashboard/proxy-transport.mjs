@@ -89,7 +89,10 @@ export function dashboardProxyTransport(tenant, { configuration = gatewayConfigu
             // A temporary viewer must never acquire a reusable device token.
             if (message.payload?.auth) delete message.payload.auth.deviceToken;
           }
-          if (downstream.readyState === WebSocket.OPEN) downstream.send(JSON.stringify(message));
+          if (downstream.readyState === WebSocket.OPEN) {
+            if (downstream.bufferedAmount > 32 * 1024 * 1024) return end();
+            downstream.send(JSON.stringify(message));
+          }
         } catch { end(); }
       });
       downstream.on('message', (raw, binary) => {
