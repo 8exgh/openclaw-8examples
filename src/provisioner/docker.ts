@@ -164,8 +164,16 @@ export function composeUp(tenant: Tenant, plugins: string[] = []): void {
   const dir = tenantDir(tenant.id);
   // The private gateway network must exist before compose up references it.
   if (tenant.modelGatewayUrl && tenant.tier !== 'desktop') ensureTenantGatewayNetwork(tenant);
-  // Install before first start: a 2026.8.1+ gateway that boots with a
-  // configured-but-missing plugin refuses ready and crash-loops.
+  // Reserve workers may retain a database from an older image. Gateway boot
+  // refuses identity/transcript migrations while acting as a writer. Repair
+  // the stopped state before activation, using the same mounts and image.
+  // Never run maintenance beside an active owner's gateway.
+  if (!/\bUp\b/i.test(containerStatus(tenant))) {
+    docker(['compose', 'stop'], dir);
+    docker(['compose', 'run', '--rm', '--no-deps', 'openclaw', 'openclaw', 'doctor', '--fix', '--non-interactive'], dir);
+  }
+  // Plugin commands also need migrated state. Install after maintenance but
+  // before starting a gateway that would reject a missing provider plugin.
   ensurePlugins(tenant, plugins);
   docker(['compose', 'up', '-d', '--remove-orphans'], dir);
   // A config-only change (openclaw.json is bind-mounted, so the compose file is
@@ -175,6 +183,9 @@ export function composeUp(tenant: Tenant, plugins: string[] = []): void {
   // restart guarantees exactly one poller. It is also what loads plugins
   // installed above when the container already existed.
   docker(['compose', 'restart'], dir);
+  // A successful docker start is not proof that OpenClaw survived migration
+  // and plugin loading. Propagate a failed health check to provisioning.
+  docker(['compose', 'up', '-d', '--wait', '--wait-timeout', '120'], dir);
 }
 
 export function composeDown(tenant: Tenant): void {
