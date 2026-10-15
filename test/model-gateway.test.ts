@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { renderTenant } from '../src/provisioner/render.js';
+import { MODEL_GATEWAY_TIMEOUT_SECONDS, renderTenant } from '../src/provisioner/render.js';
 import type { Fleet, Tenant } from '../src/types.js';
 
 const fleet: Fleet = {
@@ -56,6 +56,10 @@ test('model-gateway cutover waits for a real key, then goes gateway-only', () =>
     assert.deepEqual(config.agents.defaults.model.fallbacks, ['gateway/claude-sonnet-5']);
     assert.equal(config.models.providers.gateway.baseUrl, 'http://model-gateway:8790');
     assert.equal(config.models.providers.gateway.apiKey, '${MODEL_GATEWAY_KEY}');
+    // Replaces OpenClaw's 60s cron / 120s idle watchdog, which killed buffered
+    // Claude Code turns before the gateway could finish or fail over.
+    assert.equal(config.models.providers.gateway.timeoutSeconds, MODEL_GATEWAY_TIMEOUT_SECONDS);
+    assert.ok(MODEL_GATEWAY_TIMEOUT_SECONDS > 600, 'must exceed the gateway attempt ceiling');
     assert.equal(config.models.providers.kimi, undefined, 'no direct providers on gateway tenants');
     assert.equal(config.models.providers.minimax, undefined);
     // Direct model credentials leave the claw's env (placeholders just drop;

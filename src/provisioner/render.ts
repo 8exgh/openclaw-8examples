@@ -43,6 +43,9 @@ function ensureDirForContainer(dir: string, mode = 0o755): void {
 /** Bump when the managed layer changes in a way not captured by template files. */
 export const MANAGED_LAYER_VERSION = '0.2.1';
 
+/** Above model-gateway's 10-minute Claude Code attempt ceiling; see the gateway provider. */
+export const MODEL_GATEWAY_TIMEOUT_SECONDS = 900;
+
 /** Credentials capable of funding model calls; suppressed inventory may not mount any of them. */
 export const MODEL_CREDENTIAL_KEYS = [
   'ANTHROPIC_API_KEY',
@@ -300,6 +303,14 @@ export function buildOpenclawConfig(
                 baseUrl: opts.modelGatewayUrl,
                 apiKey: '${MODEL_GATEWAY_KEY}',
                 api: 'anthropic-messages',
+                // The gateway's Claude Code backend sends nothing until a turn
+                // finishes (up to its 10-minute attempt ceiling) and does its
+                // own failover. OpenClaw's default watchdog (60s for cron,
+                // 120s otherwise) cancelled those long turns, and every retry
+                // resumed the same stalled session. An explicit provider
+                // timeout replaces that watchdog; keep it above the gateway's
+                // ceiling so the gateway's own errors and failover surface.
+                timeoutSeconds: MODEL_GATEWAY_TIMEOUT_SECONDS,
                 models: [
                   {
                     id: 'claude-opus-4-8',
