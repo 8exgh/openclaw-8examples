@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { renderTenant, renderAgentInstructions } from '../src/provisioner/render.js';
 import { installTerminalWorkspace } from '../remote-terminal/workspace.mjs';
-import { reconcile, updateConfig } from '../owner-state/index.mjs';
+import { reconcile, updateConfig, withMissingDefaults } from '../owner-state/index.mjs';
 import type { Tenant } from '../src/types.js';
 import { ensurePlugins } from '../src/provisioner/docker.js';
 
@@ -58,13 +58,14 @@ test('owner plugins, credentials, instructions and installed skills survive repe
   assert.throws(() => renderTenant(tenant, fleet), /owner is using their terminal/);
 });
 
-test('first adoption preserves an existing configuration byte for byte, and malformed config is never replaced', t => {
+test('first adoption keeps every existing value byte for byte, and malformed config is never replaced', t => {
   const dir = mkdtempSync(path.join(tmpdir(), 'owner-adopt-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   mkdirSync(path.join(dir, 'config'));
   const file = path.join(dir, 'config/openclaw.json'), original = '{ "plugins": { "allow": [] }, "custom": "keep" }\n';
   writeFileSync(file, original);
-  updateConfig(dir, 'provisioned-config', () => ({ plugins: { allow: ['default'] }, tools: {} }), { adoptExisting: true });
+  // Nothing missing: the owner's file is not rewritten at all.
+  updateConfig(dir, 'provisioned-config', () => ({ plugins: { allow: ['default'] } }), { adoptExisting: true });
   assert.equal(readFileSync(file, 'utf8'), original);
   writeFileSync(file, '{ unfinished owner edit');
   assert.throws(() => updateConfig(dir, 'provisioned-config', () => ({})), /left untouched/);
@@ -73,6 +74,45 @@ test('first adoption preserves an existing configuration byte for byte, and malf
   rmSync(file); symlinkSync(outside, file);
   assert.throws(() => updateConfig(dir, 'provisioned-config', () => ({})), /symbolic link/);
   assert.equal(readFileSync(outside, 'utf8'), '{"private":"host"}');
+});
+
+test('adopting a reserve worker\'s older config still delivers defaults it predates', t => {
+  // openclaw10 (2026-10-30): rendered as reserve inventory before the
+  // model-gateway timeout existed, adopted on activation, and every later
+  // render read the missing key as an owner deletion — so OpenClaw's 120s
+  // idle watchdog kept killing its long job-application turns.
+  const dir = mkdtempSync(path.join(tmpdir(), 'owner-adopt-reserve-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(path.join(dir, 'config'));
+  const file = path.join(dir, 'config/openclaw.json');
+  const reserve = { models: { providers: { gateway: { baseUrl: 'http://model-gateway:8790', api: 'anthropic-messages' } } },
+    agents: { defaults: { model: { primary: 'gateway/claude-opus-4-8' } } }, plugins: { allow: [] }, owner: 'kept' };
+  writeFileSync(file, JSON.stringify(reserve, null, 2) + '\n');
+  const defaults = () => ({ models: { providers: { gateway: { baseUrl: 'http://model-gateway:8790', api: 'anthropic-messages', timeoutSeconds: 900 } } },
+    agents: { defaults: { model: { primary: 'gateway/claude-opus-5-5' } } }, plugins: { allow: ['default'], entries: { minimax: { enabled: true } } } });
+  const read = () => JSON.parse(readFileSync(file, 'utf8'));
+
+  updateConfig(dir, 'provisioned-config', defaults, { adoptExisting: true });
+  let config = read();
+  assert.equal(config.models.providers.gateway.timeoutSeconds, 900, 'a default the config predates arrives on adoption');
+  assert.deepEqual(config.plugins.entries, { minimax: { enabled: true } });
+  assert.equal(config.agents.defaults.model.primary, 'gateway/claude-opus-4-8', 'existing values win on adoption');
+  assert.deepEqual(config.plugins.allow, [], 'existing arrays win on adoption');
+  assert.equal(config.owner, 'kept');
+
+  updateConfig(dir, 'provisioned-config', defaults);
+  assert.equal(read().models.providers.gateway.timeoutSeconds, 900, 'stable on the next render');
+
+  // After adoption the ledger exists, so a real owner deletion still wins.
+  config = read(); delete config.models.providers.gateway.timeoutSeconds; writeFileSync(file, JSON.stringify(config, null, 2) + '\n');
+  updateConfig(dir, 'provisioned-config', defaults);
+  assert.equal(read().models.providers.gateway.timeoutSeconds, undefined, 'an owner deletion after adoption is honoured');
+});
+
+test('withMissingDefaults only ever adds keys', () => {
+  assert.deepEqual(withMissingDefaults({ a: 1, b: { c: false }, list: [] }, { a: 2, b: { c: true, d: 3 }, list: ['x'], e: { f: 1 } }),
+    { a: 1, b: { c: false, d: 3 }, list: [], e: { f: 1 } });
+  assert.equal(withMissingDefaults(null, { a: 1 }), null);
 });
 
 test('provisioning neither upgrades nor grants consent to an existing owner-installed managed-provider package', t => {

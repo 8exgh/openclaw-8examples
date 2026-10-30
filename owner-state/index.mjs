@@ -36,6 +36,19 @@ export function reconcile(base, current, desired, location = '') {
   return current;
 }
 
+// Adoption (no ledger yet) cannot tell an owner's deletion from a default
+// the config predates — reserve workers are rendered once and activated weeks
+// later. Existing values always win; only keys the config lacks are added, so
+// adopted workers still receive newer defaults (e.g. the model-gateway timeout).
+export function withMissingDefaults(current, desired) {
+  if (!object(current) || !object(desired)) return current;
+  const result = { ...current };
+  for (const [key, value] of Object.entries(desired)) {
+    result[key] = Object.hasOwn(current, key) ? withMissingDefaults(current[key], value) : structuredClone(value);
+  }
+  return result;
+}
+
 export function assertSafePath(file) {
   let current = path.parse(path.resolve(file)).root;
   for (const part of path.resolve(file).slice(current.length).split(path.sep)) {
@@ -73,7 +86,7 @@ export function updateConfig(dir, name, build, { adoptExisting = false } = {}) {
   const state = ledger(dir, name), previous = read(state);
   const desired = build(structuredClone(current));
   const next = previous === undefined
-    ? (original !== undefined && adoptExisting ? current : desired)
+    ? (original !== undefined && adoptExisting ? withMissingDefaults(current, desired) : desired)
     : reconcile(parse(previous, 'Provisioning baseline'), current, desired);
   if (!equal(next, current) || original === undefined) {
     if (original !== undefined) {
